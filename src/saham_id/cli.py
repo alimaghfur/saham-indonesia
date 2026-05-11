@@ -1,0 +1,363 @@
+"""CLI entrypoint for `saham-indonesia`.
+
+Entry point is registered as `saham` in `pyproject.toml` so users can run:
+
+    saham --help
+    saham quote BBCA
+    saham movers top-gainers --universe LQ45 --period 1D
+    saham screen bpjs --universe LQ45 --top 10
+    saham trending --universe LQ45
+    saham breadth --universe LQ45
+    saham sources
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from saham_id.data.sources import get_source, list_sources
+from saham_id.data.universe import list_universes
+from saham_id.utils.formatting import format_pct, format_rupiah
+from saham_id.utils.logging import configure_logging
+
+app = typer.Typer(
+    name="saham",
+    help="saham-indonesia — IDX analytics & screener toolkit.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+
+console = Console()
+
+
+# Sub-apps
+movers_app = typer.Typer(help="Top gainers / losers / most active.", no_args_is_help=True)
+screen_app = typer.Typer(help="Strategy screeners.", no_args_is_help=True)
+app.add_typer(movers_app, name="movers")
+app.add_typer(screen_app, name="screen")
+
+
+# ---------------------------------------------------------------------------
+# Root-level commands
+# ---------------------------------------------------------------------------
+@app.callback()
+def _root(
+    log_level: str = typer.Option("INFO", "--log-level", help="DEBUG/INFO/WARNING/ERROR"),
+) -> None:
+    configure_logging(log_level)
+
+
+@app.command()
+def sources() -> None:
+    """List available data sources."""
+    table = Table(title="Available Data Sources")
+    table.add_column("Name", style="cyan")
+    table.add_column("Class")
+    for name in list_sources():
+        try:
+            inst = get_source(name)
+            info = f"{inst.__class__.__name__} (delay={inst.typical_delay_minutes}m)"
+        except Exception as exc:  # pragma: no cover
+            info = f"<error: {exc}>"
+        table.add_row(name, info)
+    console.print(table)
+
+
+@app.command()
+def universes() -> None:
+    """List built-in stock universes."""
+    from saham_id.data.universe import UNIVERSES
+
+    table = Table(title="Stock Universes")
+    table.add_column("Name", style="cyan")
+    table.add_column("# tickers", justify="right")
+    table.add_column("Sample")
+    for name in list_universes():
+        tickers = UNIVERSES[name]
+        table.add_row(name, str(len(tickers)), ", ".join(tickers[:5]) + "…")
+    console.print(table)
+
+
+@app.command()
+def quote(
+    ticker: str = typer.Argument(..., help="IDX ticker, e.g. BBCA"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Get the latest quote for a single ticker."""
+    src = get_source(source)
+    q = src.get_quote(ticker)
+    change_str = format_pct(q.change_pct) if q.change_pct is not None else "n/a"
+    console.print(
+        f"[bold cyan]{q.ticker}[/] "
+        f"{format_rupiah(q.last)} [dim]({change_str})[/] "
+        f"[dim]vol={q.volume:,}  src={q.source}  delay={q.delayed_minutes}m[/]"
+    )
+
+
+@app.command()
+def ohlc(
+    ticker: str = typer.Argument(...),
+    period: str = typer.Option("1y", "--period", "-p"),
+    interval: str = typer.Option("1d", "--interval", "-i"),
+    tail: int = typer.Option(10, "--tail", help="Show last N rows"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Print historical OHLC for a ticker."""
+    src = get_source(source)
+    df = src.get_ohlc(ticker, period=period, interval=interval)  # type: ignore[arg-type]
+    console.print(df.tail(tail))
+
+
+@app.command()
+def trending(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    timeframe: str = typer.Option("1D", "--timeframe", "-t"),
+    top: int = typer.Option(20, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Detect trending stocks (composite rvol + momentum + breakout)."""
+    from saham_id.market import trending as trending_mod
+
+    src = get_source(source)
+    result = trending_mod.detect(
+        universe=universe,
+        timeframe=timeframe,  # type: ignore[arg-type]
+        top_n=top,
+        source=src,
+    )
+    _print_screen_result(result, title=f"Trending ({timeframe}) — {universe}")
+
+
+@app.command()
+def breadth(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Snapshot market breadth (advancers vs decliners)."""
+    from saham_id.market import breadth as breadth_mod
+
+    src = get_source(source)
+    snap = breadth_mod.snapshot(universe=universe, source=src)
+    table = Table(title=f"Market Breadth — {snap.universe}")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_row("Advancers", f"{snap.advancers}")
+    table.add_row("Decliners", f"{snap.decliners}")
+    table.add_row("Unchanged", f"{snap.unchanged}")
+    table.add_row("A/D Ratio", f"{snap.ad_ratio:.2f}")
+    table.add_row("Advancing %", f"{snap.advancing_pct:.1%}")
+    table.add_row("New Highs (52w)", f"{snap.new_highs_52w}")
+    table.add_row("New Lows (52w)", f"{snap.new_lows_52w}")
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Movers sub-app
+# ---------------------------------------------------------------------------
+@movers_app.command("top-gainers")
+def cmd_top_gainers(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    period: str = typer.Option("1D", "--period", "-p"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Show top gainers in a universe."""
+    from saham_id.market import movers
+
+    src = get_source(source)
+    result = movers.top_gainers(
+        universe=universe, period=period, top_n=top, source=src  # type: ignore[arg-type]
+    )
+    _print_movers(result, title=f"Top Gainers ({period}) — {universe}")
+
+
+@movers_app.command("top-losers")
+def cmd_top_losers(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    period: str = typer.Option("1D", "--period", "-p"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Show top losers in a universe."""
+    from saham_id.market import movers
+
+    src = get_source(source)
+    result = movers.top_losers(
+        universe=universe, period=period, top_n=top, source=src  # type: ignore[arg-type]
+    )
+    _print_movers(result, title=f"Top Losers ({period}) — {universe}")
+
+
+@movers_app.command("most-active")
+def cmd_most_active(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    by: str = typer.Option("value", "--by", help="volume | value"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Show most actively traded stocks."""
+    from saham_id.market import movers
+
+    src = get_source(source)
+    result = movers.most_active(
+        universe=universe, by=by, top_n=top, source=src  # type: ignore[arg-type]
+    )
+    _print_movers(result, title=f"Most Active (by {by}) — {universe}")
+
+
+# ---------------------------------------------------------------------------
+# Screen sub-app
+# ---------------------------------------------------------------------------
+@screen_app.command("bpjs")
+def cmd_bpjs(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    lookback: int = typer.Option(60, "--lookback"),
+    min_win_rate: float = typer.Option(0.55, "--min-win-rate"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Beli Pagi Jual Sore screener."""
+    from saham_id.screener.intraday import bpjs
+
+    src = get_source(source)
+    result = bpjs.screen(
+        universe=universe,
+        lookback_days=lookback,
+        min_win_rate=min_win_rate,
+        top_n=top,
+        source=src,
+    )
+    _print_screen_result(result, title=f"BPJS screener — {universe}")
+
+
+@screen_app.command("bsjp")
+def cmd_bsjp(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    lookback: int = typer.Option(60, "--lookback"),
+    min_gap_up_rate: float = typer.Option(0.55, "--min-gap-up-rate"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Beli Sore Jual Pagi screener."""
+    from saham_id.screener.intraday import bsjp
+
+    src = get_source(source)
+    result = bsjp.screen(
+        universe=universe,
+        lookback_days=lookback,
+        min_gap_up_rate=min_gap_up_rate,
+        top_n=top,
+        source=src,
+    )
+    _print_screen_result(result, title=f"BSJP screener — {universe}")
+
+
+@screen_app.command("swing-breakout")
+def cmd_swing_breakout(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    top: int = typer.Option(20, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Swing breakout screener."""
+    from saham_id.screener.swing import breakout
+
+    src = get_source(source)
+    result = breakout.screen(universe=universe, top_n=top, source=src)
+    _print_screen_result(result, title=f"Swing Breakout — {universe}")
+
+
+@screen_app.command("swing-pullback")
+def cmd_swing_pullback(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    top: int = typer.Option(15, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Swing pullback screener."""
+    from saham_id.screener.swing import pullback
+
+    src = get_source(source)
+    result = pullback.screen(universe=universe, top_n=top, source=src)
+    _print_screen_result(result, title=f"Swing Pullback — {universe}")
+
+
+@screen_app.command("swing-reversal")
+def cmd_swing_reversal(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    top: int = typer.Option(15, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Swing reversal screener (oversold bounce)."""
+    from saham_id.screener.swing import reversal
+
+    src = get_source(source)
+    result = reversal.screen(universe=universe, top_n=top, source=src)
+    _print_screen_result(result, title=f"Swing Reversal — {universe}")
+
+
+@screen_app.command("unusual")
+def cmd_unusual(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    top: int = typer.Option(20, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Unusual volume / price activity detector."""
+    from saham_id.market import unusual_activity
+
+    src = get_source(source)
+    result = unusual_activity.detect(universe=universe, top_n=top, source=src)
+    _print_screen_result(result, title=f"Unusual Activity — {universe}")
+
+
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+def _print_movers(movers: list, title: str) -> None:
+    if not movers:
+        console.print(f"[yellow]{title}: no results[/]")
+        return
+    table = Table(title=title)
+    table.add_column("#", justify="right")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Last", justify="right")
+    table.add_column("Change %", justify="right")
+    table.add_column("Volume", justify="right")
+    table.add_column("Value (Rp)", justify="right")
+    for i, m in enumerate(movers, start=1):
+        chg_color = "green" if m.change_pct >= 0 else "red"
+        table.add_row(
+            str(i),
+            m.ticker,
+            format_rupiah(m.last),
+            f"[{chg_color}]{format_pct(m.change_pct)}[/]",
+            f"{m.volume:,}",
+            format_rupiah(m.value),
+        )
+    console.print(table)
+
+
+def _print_screen_result(result, title: str) -> None:
+    df = result.to_dataframe()
+    if df.empty:
+        console.print(f"[yellow]{title}: no matches[/]")
+        return
+    table = Table(title=title)
+    for col in df.columns:
+        table.add_column(col, justify="right" if col != "ticker" else "left",
+                         style="cyan" if col == "ticker" else None)
+    for _, row in df.iterrows():
+        table.add_row(*[_fmt_cell(row[c]) for c in df.columns])
+    console.print(table)
+
+
+def _fmt_cell(v) -> str:
+    if isinstance(v, float):
+        return f"{v:,.4f}" if abs(v) < 1 else f"{v:,.2f}"
+    return str(v)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()
