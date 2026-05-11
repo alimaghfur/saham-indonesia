@@ -107,3 +107,113 @@ def trading_days_between(start: date, end: date) -> list[date]:
 def trading_days_count(start: date, end: date) -> int:
     """Count trading days between start and end (inclusive)."""
     return len(trading_days_between(start, end))
+
+
+# ---------------------------------------------------------------------------
+# Auto-detection utilities
+# ---------------------------------------------------------------------------
+
+
+def detect_holidays_from_ohlc(
+    ohlc_index,
+    year: int | None = None,
+) -> list[date]:
+    """Detect likely IDX holidays by finding weekdays with no trading data.
+
+    Compares weekdays in the given year against dates present in an OHLC
+    DataFrame index. Any weekday NOT in the index is a candidate holiday.
+
+    Parameters:
+        ohlc_index: DatetimeIndex or iterable of dates/timestamps from
+                    a broad-market OHLC (e.g. IHSG/^JKSE daily data).
+        year: Year to analyze. If None, uses the most recent year in data.
+
+    Returns:
+        Sorted list of date objects representing detected holidays.
+
+    Usage:
+        >>> from saham_id.data.sources import get_source
+        >>> src = get_source("yahoo")
+        >>> df = src.get_ohlc("^JKSE", period="1y", interval="1d")
+        >>> holidays = detect_holidays_from_ohlc(df.index, year=2025)
+    """
+    # Convert index to set of date objects
+    trading_dates: set[date] = set()
+    for ts in ohlc_index:
+        if hasattr(ts, "date"):
+            trading_dates.add(ts.date() if callable(ts.date) else ts.date)
+        elif isinstance(ts, date):
+            trading_dates.add(ts)
+
+    if not trading_dates:
+        return []
+
+    # Determine year
+    if year is None:
+        year = max(d.year for d in trading_dates)
+
+    # Find all weekdays in that year
+    jan1 = date(year, 1, 1)
+    dec31 = date(year, 12, 31)
+
+    # Only consider dates within the data range to avoid false positives
+    data_start = min(d for d in trading_dates if d.year == year) if any(d.year == year for d in trading_dates) else jan1
+    data_end = max(d for d in trading_dates if d.year == year) if any(d.year == year for d in trading_dates) else dec31
+
+    detected: list[date] = []
+    d = data_start
+    while d <= data_end:
+        if d.weekday() < 5 and d not in trading_dates:
+            detected.append(d)
+        d += timedelta(days=1)
+
+    return sorted(detected)
+
+
+def get_holidays_for_year(year: int) -> set[date]:
+    """Return the set of known holidays for a given year.
+
+    Returns an empty set for years without hardcoded data.
+    """
+    registry: dict[int, set[date]] = {
+        2025: IDX_HOLIDAYS_2025,
+        2026: IDX_HOLIDAYS_2026,
+    }
+    return registry.get(year, set())
+
+
+def add_custom_holidays(holidays: set[date]) -> None:
+    """Add custom holidays to the global ALL_HOLIDAYS set at runtime.
+
+    Useful for dynamically adding detected holidays or holidays for
+    years not yet hardcoded.
+
+    Parameters:
+        holidays: Set of date objects to add.
+    """
+    global ALL_HOLIDAYS
+    ALL_HOLIDAYS = ALL_HOLIDAYS | holidays
+
+
+def estimate_trading_days_per_year(year: int) -> int:
+    """Estimate total trading days for a given year.
+
+    Uses known holidays if available, otherwise assumes ~15 holidays.
+    """
+    holidays = get_holidays_for_year(year)
+    jan1 = date(year, 1, 1)
+    dec31 = date(year, 12, 31)
+
+    if holidays:
+        # Count weekdays minus known holidays
+        count = 0
+        d = jan1
+        while d <= dec31:
+            if d.weekday() < 5 and d not in holidays:
+                count += 1
+            d += timedelta(days=1)
+        return count
+    else:
+        # Approximate: 52 weeks * 5 days - ~15 holidays
+        weekdays = sum(1 for i in range((dec31 - jan1).days + 1) if (jan1 + timedelta(days=i)).weekday() < 5)
+        return weekdays - 15  # conservative estimate

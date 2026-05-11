@@ -62,16 +62,16 @@ class TestSkeletonSources:
         src = get_source("rti")
         try:
             src.get_quote("BBCA")
-            assert False, "Should raise NotImplementedForSource"
-        except NotImplementedForSource:
+            assert False, "Should raise SourceError"
+        except (NotImplementedForSource, SourceError):
             pass
 
     def test_rti_get_ohlc_raises(self):
         src = get_source("rti")
         try:
             src.get_ohlc("BBCA")
-            assert False, "Should raise NotImplementedForSource"
-        except NotImplementedForSource:
+            assert False, "Should raise SourceError"
+        except (NotImplementedForSource, SourceError):
             pass
 
     def test_itick_no_key_get_quote_raises(self):

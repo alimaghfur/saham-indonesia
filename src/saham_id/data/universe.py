@@ -15,19 +15,18 @@ from typing import Iterable
 # ---------------------------------------------------------------------------
 IDX30: list[str] = [
     "ADRO", "AMRT", "ANTM", "ASII", "BBCA", "BBNI", "BBRI", "BMRI",
-    "BRIS", "BRPT", "CPIN", "GOTO", "ICBP", "INCO", "INDF", "INKP",
-    "ITMG", "KLBF", "MDKA", "MEDC", "PGAS", "PTBA", "SMGR", "TLKM",
-    "TOWR", "UNTR", "UNVR",
-    # placeholder — actual list is 30 but may vary with rebalancing
+    "BRIS", "BRPT", "CPIN", "ESSA", "GOTO", "ICBP", "INCO", "INDF",
+    "INKP", "ITMG", "KLBF", "MDKA", "MEDC", "PGAS", "PTBA", "SMGR",
+    "TLKM", "TPIA", "TOWR", "UNTR", "UNVR", "EXCL",
 ]
 
 # ---------------------------------------------------------------------------
 # LQ45 — 45 most liquid stocks
 # ---------------------------------------------------------------------------
 LQ45: list[str] = sorted(set(IDX30 + [
-    "AKRA", "BBTN", "ESSA", "EXCL", "HRUM", "INTP", "JPFA", "JSMR",
-    "MAPI", "MNCN", "MTEL", "PGEO", "PTPP", "SIDO", "TINS", "TPIA",
-    "WIKA", "WIKA",
+    "AKRA", "BBTN", "HRUM", "INTP", "JPFA", "JSMR",
+    "MAPI", "MNCN", "MTEL", "PGEO", "PTPP", "SIDO", "TINS",
+    "WIKA",
 ]))
 
 # ---------------------------------------------------------------------------

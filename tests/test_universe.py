@@ -75,3 +75,6 @@ class TestUniverseData:
 
     def test_no_duplicates_in_idx30(self):
         assert len(IDX30) == len(set(IDX30))
+
+    def test_idx30_has_30(self):
+        assert len(IDX30) == 30
