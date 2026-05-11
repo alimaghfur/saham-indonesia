@@ -209,6 +209,26 @@ def cmd_most_active(
     _print_movers(result, title=f"Most Active (by {by}) — {universe}")
 
 
+@movers_app.command("native")
+def cmd_native_movers(
+    kind: str = typer.Option("gainer", "--kind", "-k", help="gainer|loser|most_active|trending"),
+    top: int = typer.Option(20, "--top", "-n"),
+    source: str = typer.Option("goapi", "--source", "-s", help="Source with native movers (goapi)"),
+) -> None:
+    """Fetch movers directly from source API (e.g. GoAPI native endpoint)."""
+    from saham_id.data.sources.base import NotImplementedForSource
+
+    src = get_source(source)
+    try:
+        result = src.get_movers(kind=kind, top_n=top)  # type: ignore[arg-type]
+    except NotImplementedForSource:
+        console.print(
+            f"[red]Source '{source}' does not support native get_movers(kind={kind})[/]"
+        )
+        raise typer.Exit(1)
+    _print_movers(result, title=f"Native Movers ({kind}) — {source}")
+
+
 # ---------------------------------------------------------------------------
 # Screen sub-app
 # ---------------------------------------------------------------------------
@@ -296,6 +316,28 @@ def cmd_swing_reversal(
     src = get_source(source)
     result = reversal.screen(universe=universe, top_n=top, source=src)
     _print_screen_result(result, title=f"Swing Reversal — {universe}")
+
+
+@screen_app.command("scalping")
+def cmd_scalping(
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    min_atr_pct: float = typer.Option(0.015, "--min-atr-pct"),
+    min_rvol: float = typer.Option(2.0, "--min-rvol"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Scalping screener (high volatility + high RVOL)."""
+    from saham_id.screener.intraday import scalping
+
+    src = get_source(source)
+    result = scalping.screen(
+        universe=universe,
+        min_atr_pct=min_atr_pct,
+        min_rvol=min_rvol,
+        top_n=top,
+        source=src,
+    )
+    _print_screen_result(result, title=f"Scalping — {universe}")
 
 
 @screen_app.command("unusual")
