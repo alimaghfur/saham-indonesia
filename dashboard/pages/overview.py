@@ -133,3 +133,59 @@ def render() -> None:
             st.info("No unusual activity detected.")
     except Exception as e:
         st.error(f"Error: {e}")
+
+    st.markdown("---")
+
+    # --- Quick Chart: Top Gainer / Selected Stock ---
+    st.subheader("Quick Chart")
+    chart_col1, chart_col2 = st.columns([1, 3])
+
+    with chart_col1:
+        chart_ticker = st.text_input("Ticker untuk chart", value="BBCA", max_chars=10).upper()
+        chart_period = st.selectbox("Chart Period", ["1mo", "3mo", "6mo", "1y"], index=2, key="ov_chart_period")
+        chart_indicators = st.multiselect(
+            "Indicators",
+            ["RSI", "MACD", "Volume"],
+            default=["RSI"],
+            key="ov_chart_ind",
+        )
+
+    with chart_col2:
+        try:
+            from saham_id.data.sources import get_source as _get_source
+            from saham_id.charting.candlestick import candlestick_chart
+            from saham_id.charting.indicators import multi_indicator_chart
+
+            _src = _get_source()
+            with st.spinner(f"Loading chart {chart_ticker}..."):
+                ohlc_df = _src.get_ohlc(chart_ticker, period=chart_period, interval="1d")
+
+            if ohlc_df is not None and not ohlc_df.empty:
+                # Candlestick with MA
+                fig_candle = candlestick_chart(
+                    ohlc_df,
+                    ticker=chart_ticker,
+                    ma_periods=[20, 50],
+                    show_volume=True,
+                    height=450,
+                    dark=True,
+                )
+                st.plotly_chart(fig_candle, use_container_width=True)
+
+                # Indicators panel below
+                ind_map = {"RSI": "rsi", "MACD": "macd", "Volume": "volume"}
+                ind_list = [ind_map[i] for i in chart_indicators if i in ind_map]
+
+                if ind_list:
+                    fig_ind = multi_indicator_chart(
+                        ohlc_df,
+                        indicators=ind_list,
+                        ticker=chart_ticker,
+                        height=200 + 180 * len(ind_list),
+                        dark=True,
+                    )
+                    st.plotly_chart(fig_ind, use_container_width=True)
+            else:
+                st.warning(f"Tidak ada data untuk {chart_ticker}.")
+        except Exception as e:
+            st.error(f"Chart error: {e}")

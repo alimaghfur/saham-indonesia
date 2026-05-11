@@ -9,12 +9,13 @@ Run with:
     streamlit run dashboard/app.py
 
 Pages:
-    1. Market Overview — breadth, top movers, trending
-    2. Sinyal — BUY/SELL signal generation
-    3. Screener — swing breakout/pullback/reversal, BPJS, BSJP
-    4. Backtest — run strategies on historical data
-    5. Portfolio — track positions and P/L
-    6. Watchlist & Fee — watchlist + broker fee calculator
+    1. Market Overview — breadth, top movers, trending + quick chart
+    2. Technical Chart — full interactive candlestick & indicator analysis
+    3. Sinyal — BUY/SELL signal generation
+    4. Screener — swing breakout/pullback/reversal, BPJS, BSJP
+    5. Backtest — run strategies on historical data
+    6. Portfolio — track positions, P/L, equity curve, drawdown
+    7. Watchlist & Fee — watchlist + broker fee calculator
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ st.sidebar.markdown("**IDX Analytics & Screener**")
 
 page = st.sidebar.radio(
     "Navigasi",
-    ["Market Overview", "Score Card", "Bandarmology", "Sinyal", "Screener", "Backtest", "Portfolio", "Watchlist & Fee"],
+    ["Market Overview", "Technical Chart", "Score Card", "Bandarmology", "Sinyal", "Screener", "Backtest", "Portfolio", "Watchlist & Fee"],
     index=0,
 )
 
@@ -60,6 +61,9 @@ st.sidebar.markdown(
 if page == "Market Overview":
     from dashboard.pages import overview
     overview.render()
+elif page == "Technical Chart":
+    from dashboard.pages import chart
+    chart.render()
 elif page == "Score Card":
     from dashboard.pages import scorecard_page
     scorecard_page.render()
