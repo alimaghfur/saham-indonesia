@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, time, timezone, timedelta
 
+from saham_id.utils import calendar as idx_calendar
+
 WIB = timezone(timedelta(hours=7))
 
 
@@ -40,8 +42,8 @@ def now_wib() -> datetime:
 
 
 def is_trading_day(dt: datetime) -> bool:
-    """Rough check — weekday only. TODO: integrate IDX holiday calendar."""
-    return dt.weekday() < 5
+    """True if `dt` falls on a weekday that is not an IDX holiday."""
+    return idx_calendar.is_trading_day(dt.date())
 
 
 def current_session(dt: datetime | None = None) -> str:

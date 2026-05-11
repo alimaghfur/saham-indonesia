@@ -6,12 +6,20 @@ from decimal import Decimal
 
 
 def format_rupiah(value: float | Decimal | int, decimals: int = 0) -> str:
-    """Format number as `Rp 1.234.567` with Indonesian thousands separator."""
+    """Format number with Indonesian convention.
+
+    Examples:
+        format_rupiah(1_234_567)        -> 'Rp 1.234.567'
+        format_rupiah(1234.5, 2)        -> 'Rp 1.234,50'
+        format_rupiah(-1_000_000)       -> '-Rp 1.000.000'
+    """
     v = float(value)
     sign = "-" if v < 0 else ""
     v = abs(v)
-    # Use Indonesian convention: '.' as thousands separator.
-    formatted = f"{v:,.{decimals}f}".replace(",", ".")
+    # Start with US-formatted `1,234.50`, swap separators via a temp placeholder
+    # so we end up with `1.234,50` (Indonesian).
+    formatted = f"{v:,.{decimals}f}"
+    formatted = formatted.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
     return f"{sign}Rp {formatted}"
 
 

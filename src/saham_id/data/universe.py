@@ -27,7 +27,7 @@ IDX30: list[str] = [
 LQ45: list[str] = sorted(set(IDX30 + [
     "AKRA", "BBTN", "ESSA", "EXCL", "HRUM", "INTP", "JPFA", "JSMR",
     "MAPI", "MNCN", "MTEL", "PGEO", "PTPP", "SIDO", "TINS", "TPIA",
-    "WIKA", "WIKA",
+    "WIKA",
 ]))
 
 # ---------------------------------------------------------------------------

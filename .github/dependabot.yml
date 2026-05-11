@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+      include: scope
+    groups:
+      lint:
+        patterns:
+          - "ruff"
+          - "mypy"
+          - "black"
+          - "isort"
+      test:
+        patterns:
+          - "pytest*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

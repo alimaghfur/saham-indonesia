@@ -71,11 +71,28 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
-ignore = ["E501"]
+ignore = [
+    "E501",  # line-too-long (covered by formatter)
+    "B008",  # function calls in argument defaults (typer pattern)
+    "N802",  # lowercase function names (we use snake_case anyway)
+    "SIM108",  # if-else over ternary can be noisier
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Re-exports in package __init__.py are not "unused"
+"**/__init__.py" = ["F401"]
+# Tests may redefine fixtures with the same name as imports (pytest pattern)
+"tests/**/*.py" = ["F401", "F811"]
+# The scalping screener uses complex numeric expressions; allow longer lines
+"src/saham_id/screener/intraday/scalping.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["saham_id"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+pythonpath = ["."]
 
 [tool.mypy]
 python_version = "3.10"
