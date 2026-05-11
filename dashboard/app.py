@@ -5,16 +5,29 @@ saham-indonesia Streamlit Dashboard
 Multi-page dashboard for IDX stock analytics.
 
 Run with:
+    cd saham-indonesia
     streamlit run dashboard/app.py
 
 Pages:
     1. Market Overview — breadth, top movers, trending
-    2. Screener — swing breakout/pullback/reversal, BPJS, BSJP
-    3. Backtest — run strategies on historical data
-    4. Portfolio — track positions and P/L
+    2. Sinyal — BUY/SELL signal generation
+    3. Screener — swing breakout/pullback/reversal, BPJS, BSJP
+    4. Backtest — run strategies on historical data
+    5. Portfolio — track positions and P/L
+    6. Watchlist & Fee — watchlist + broker fee calculator
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path so imports work regardless of CWD
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+if str(_project_root / "src") not in sys.path:
+    sys.path.insert(0, str(_project_root / "src"))
 
 import streamlit as st
 
