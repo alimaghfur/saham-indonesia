@@ -40,6 +40,8 @@ dependencies = [
     "python-dateutil>=2.9",
     "tenacity>=8.2",
     "cachetools>=5.3",
+    # News
+    "feedparser>=6.0",
 ]
 
 [project.optional-dependencies]

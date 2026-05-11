@@ -162,6 +162,16 @@ def render() -> None:
                     )
                     st.plotly_chart(fig_multi, use_container_width=True)
 
+            # --- Performance Stats ---
+            st.markdown("---")
+            st.subheader("Performance")
+            _render_performance_stats(df, ticker)
+
+            # --- Related News ---
+            st.markdown("---")
+            st.subheader(f"Berita Terkait {ticker}")
+            _render_news_for_ticker(ticker)
+
             # --- Data table ---
             with st.expander("Raw Data (OHLCV)"):
                 st.dataframe(
@@ -199,3 +209,80 @@ def _auto_sr_levels(df, lookback: int = 60) -> tuple[list[float], list[float]]:
     resistance_levels = [r for r in resistance_levels if r < close * 1.15]
 
     return support_levels, resistance_levels
+
+
+
+def _render_performance_stats(df, ticker: str) -> None:
+    """Show percentage change over various periods."""
+    import pandas as pd
+
+    last_price = df["close"].iloc[-1]
+
+    # Calculate changes for available periods
+    periods = {
+        "1D": 1,
+        "1W": 5,
+        "1M": 21,
+        "3M": 63,
+        "6M": 126,
+        "1Y": 252,
+        "YTD": None,  # calculated separately
+    }
+
+    cols = st.columns(len(periods))
+
+    for i, (label, days) in enumerate(periods.items()):
+        with cols[i]:
+            if label == "YTD":
+                # Year-to-date
+                current_year = pd.Timestamp.now().year
+                ytd_data = df[df.index >= f"{current_year}-01-01"]
+                if len(ytd_data) > 0:
+                    start_price = ytd_data["close"].iloc[0]
+                    change_pct = ((last_price - start_price) / start_price) * 100
+                else:
+                    change_pct = 0.0
+            else:
+                if len(df) > days:
+                    start_price = df["close"].iloc[-(days + 1)]
+                    change_pct = ((last_price - start_price) / start_price) * 100
+                else:
+                    change_pct = ((last_price - df["close"].iloc[0]) / df["close"].iloc[0]) * 100
+
+            # Color-coded display
+            delta_str = f"{change_pct:+.2f}%"
+            st.metric(label, f"{change_pct:+.2f}%", delta=delta_str)
+
+
+def _render_news_for_ticker(ticker: str) -> None:
+    """Display news articles related to the ticker."""
+    try:
+        from saham_id.news import get_news_for_ticker, get_news
+
+        articles = get_news_for_ticker(ticker, limit=5)
+
+        # If no ticker-specific news, show general market news
+        if not articles:
+            st.caption(f"Tidak ada berita spesifik untuk {ticker}. Menampilkan berita pasar umum:")
+            articles = get_news(limit=5)
+
+        if articles:
+            for article in articles:
+                col_news, col_meta = st.columns([4, 1])
+                with col_news:
+                    st.markdown(f"**[{article.title}]({article.url})**")
+                    if article.summary:
+                        st.caption(article.summary[:150] + "..." if len(article.summary) > 150 else article.summary)
+                with col_meta:
+                    st.caption(f"📰 {article.source.value}")
+                    st.caption(f"🕐 {article.age_display}")
+                    if article.tickers:
+                        st.caption(f"🏷️ {', '.join(article.tickers[:3])}")
+                st.markdown("---")
+        else:
+            st.info("Tidak dapat mengambil berita saat ini.")
+
+    except ImportError:
+        st.warning("Module `feedparser` belum terinstall. Run: `pip install feedparser`")
+    except Exception as e:
+        st.warning(f"Gagal mengambil berita: {e}")

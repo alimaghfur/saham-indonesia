@@ -189,3 +189,40 @@ def render() -> None:
                 st.warning(f"Tidak ada data untuk {chart_ticker}.")
         except Exception as e:
             st.error(f"Chart error: {e}")
+
+    # --- Market News ---
+    st.markdown("---")
+    st.subheader("Berita Pasar Terkini")
+    _render_market_news()
+
+
+
+def _render_market_news() -> None:
+    """Display latest market news feed in the overview page."""
+    try:
+        from saham_id.news import get_news
+
+        with st.spinner("Mengambil berita terkini..."):
+            articles = get_news(limit=10)
+
+        if articles:
+            for article in articles:
+                col_content, col_info = st.columns([5, 1])
+                with col_content:
+                    st.markdown(f"**[{article.title}]({article.url})**")
+                    if article.summary:
+                        summary_display = article.summary[:200] + "..." if len(article.summary) > 200 else article.summary
+                        st.caption(summary_display)
+                with col_info:
+                    st.caption(f"📰 {article.source.value}")
+                    st.caption(f"🕐 {article.age_display}")
+                    if article.tickers:
+                        st.caption(f"🏷️ {', '.join(article.tickers[:4])}")
+                st.markdown("---")
+        else:
+            st.info("Tidak dapat mengambil berita saat ini. Cek koneksi internet.")
+
+    except ImportError:
+        st.warning("Module `feedparser` belum terinstall. Run: `pip install feedparser`")
+    except Exception as e:
+        st.warning(f"Gagal mengambil berita: {e}")
