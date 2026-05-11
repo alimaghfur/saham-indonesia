@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     cache_dir: Path = Field(default=Path("./data/cache"), alias="SAHAM_ID_CACHE_DIR")
     log_level: str = Field(default="INFO", alias="SAHAM_ID_LOG_LEVEL")
 
+    # --- Cache settings ---
+    cache_enabled: bool = Field(default=True, alias="SAHAM_ID_CACHE_ENABLED")
+    cache_memory_maxsize: int = Field(default=1024, alias="SAHAM_ID_CACHE_MEMORY_MAXSIZE")
+    cache_default_ttl: int = Field(default=300, alias="SAHAM_ID_CACHE_DEFAULT_TTL")
+    cache_disk_enabled: bool = Field(default=True, alias="SAHAM_ID_CACHE_DISK_ENABLED")
+
+    # --- Retry settings ---
+    retry_max_attempts: int = Field(default=3, alias="SAHAM_ID_RETRY_MAX_ATTEMPTS")
+    retry_min_wait: float = Field(default=1.0, alias="SAHAM_ID_RETRY_MIN_WAIT")
+    retry_max_wait: float = Field(default=30.0, alias="SAHAM_ID_RETRY_MAX_WAIT")
+
     @property
     def data_source_chain(self) -> list[str]:
         return [s.strip().lower() for s in self.data_sources.split(",") if s.strip()]
