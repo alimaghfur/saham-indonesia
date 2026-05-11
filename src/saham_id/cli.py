@@ -355,6 +355,122 @@ def cmd_unusual(
 
 
 # ---------------------------------------------------------------------------
+# Signal & analysis commands
+# ---------------------------------------------------------------------------
+@app.command()
+def signals(
+    universe: str = typer.Option("IDX30", "--universe", "-u"),
+    engine_type: str = typer.Option("swing_buy", "--engine", "-e", help="swing_buy|swing_sell|scalping"),
+    top: int = typer.Option(10, "--top", "-n"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Generate buy/sell signals using composite indicator engine."""
+    from saham_id.signals import generate_signals, swing_buy_engine, swing_sell_engine, scalping_engine, Action
+    from saham_id.data.universe import get_universe
+
+    engines = {"swing_buy": swing_buy_engine, "swing_sell": swing_sell_engine, "scalping": scalping_engine}
+    engine_fn = engines.get(engine_type)
+    if not engine_fn:
+        console.print(f"[red]Unknown engine: {engine_type}. Use: swing_buy, swing_sell, scalping[/]")
+        raise typer.Exit(1)
+
+    src = get_source(source)
+    tickers = get_universe(universe)
+    engine = engine_fn()
+
+    with console.status(f"Generating signals for {len(tickers)} stocks..."):
+        sigs = generate_signals(tickers, engine=engine, source=src)
+
+    # Filter actionable signals
+    actionable = [s for s in sigs if s.action != Action.HOLD][:top]
+
+    if not actionable:
+        console.print(f"[yellow]No actionable signals for {universe}[/]")
+        return
+
+    table = Table(title=f"Signals ({engine_type}) — {universe}")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Action")
+    table.add_column("Confidence", justify="right")
+    table.add_column("Score", justify="right")
+    table.add_column("Reasons")
+    for sig in actionable:
+        color = "green" if sig.action == Action.BUY else "red"
+        table.add_row(
+            sig.ticker,
+            f"[{color}]{sig.action.value}[/]",
+            f"{sig.confidence:.0%}",
+            f"{sig.score:+.3f}",
+            "; ".join(sig.reasons[:3]),
+        )
+    console.print(table)
+
+
+@app.command()
+def mtf(
+    ticker: str = typer.Argument(..., help="IDX ticker, e.g. BBCA"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Multi-timeframe analysis for a single ticker."""
+    from saham_id.analysis.mtf import multi_timeframe_analysis
+
+    src = get_source(source)
+    with console.status(f"Analyzing {ticker} across timeframes..."):
+        result = multi_timeframe_analysis(ticker, source=src)
+
+    color = {"BULLISH": "green", "BEARISH": "red", "NEUTRAL": "yellow"}[result.consensus]
+    console.print(f"\n[bold]{ticker}[/] — [{color}]{result.consensus}[/] "
+                  f"(alignment: {result.alignment_score:.0%})")
+    console.print(f"  {result.recommendation}\n")
+
+    table = Table(title="Timeframe Analysis")
+    table.add_column("Timeframe")
+    table.add_column("Bias")
+    table.add_column("Trend")
+    table.add_column("RSI", justify="right")
+    table.add_column("MACD")
+    table.add_column("Notes")
+    for name, view in result.timeframes.items():
+        bias_color = {"BULLISH": "green", "BEARISH": "red", "NEUTRAL": "yellow"}[view.bias]
+        table.add_row(
+            name,
+            f"[{bias_color}]{view.bias}[/]",
+            view.trend or "-",
+            f"{view.rsi:.1f}" if view.rsi else "-",
+            view.macd_signal or "-",
+            "; ".join(view.notes[:2]) if view.notes else "-",
+        )
+    console.print(table)
+
+
+@app.command("position-size")
+def cmd_position_size(
+    capital: float = typer.Option(100_000_000, "--capital", "-c", help="Total capital (Rp)"),
+    entry: float = typer.Option(..., "--entry", help="Entry price per share"),
+    stop: float = typer.Option(..., "--stop", help="Stop-loss price per share"),
+    risk_pct: float = typer.Option(0.02, "--risk", "-r", help="Max risk % (e.g. 0.02 = 2%)"),
+) -> None:
+    """Calculate position size using fixed-fractional method."""
+    from saham_id.portfolio.sizing import fixed_fractional
+
+    result = fixed_fractional(
+        capital=capital, risk_pct=risk_pct,
+        entry_price=entry, stop_loss_price=stop,
+    )
+
+    table = Table(title="Position Size")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_row("Shares", f"{result.shares:,}")
+    table.add_row("Lots", f"{result.lots:,}")
+    table.add_row("Capital Required", f"Rp {result.capital_required:,.0f}")
+    table.add_row("Risk Amount", f"Rp {result.risk_amount:,.0f}")
+    table.add_row("Risk % of Capital", f"{result.risk_pct_of_capital:.2%}")
+    table.add_row("Stop Loss", f"Rp {result.stop_loss_price:,.0f}" if result.stop_loss_price else "-")
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
 def _print_movers(movers: list, title: str) -> None:
