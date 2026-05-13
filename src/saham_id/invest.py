@@ -376,7 +376,7 @@ def _analyze_momentum(df) -> float:
             score -= 5
 
     # Stochastic
-    stoch_result = stoch(df["high"], df["low"], close, k_period=14)
+    stoch_result = stoch(df["high"], df["low"], close, k_window=14)
     if hasattr(stoch_result, 'k'):
         k_val = float(stoch_result.k.iloc[-1]) if stoch_result.k.iloc[-1] is not None else 50
     else:
