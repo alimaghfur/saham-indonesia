@@ -9,6 +9,7 @@ Plotly-based interactive charts for:
 """
 
 from saham_id.charting.candlestick import candlestick_chart, ohlc_chart
+from saham_id.charting.comparison import comparison_chart, drawdown_comparison
 from saham_id.charting.indicators import indicator_chart, multi_indicator_chart
 from saham_id.charting.portfolio import (
     allocation_pie,
@@ -21,6 +22,8 @@ from saham_id.charting.styles import IDX_THEME, apply_theme
 __all__ = [
     "candlestick_chart",
     "ohlc_chart",
+    "comparison_chart",
+    "drawdown_comparison",
     "indicator_chart",
     "multi_indicator_chart",
     "equity_curve",

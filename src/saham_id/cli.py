@@ -13,6 +13,7 @@ Entry point is registered as `saham` in `pyproject.toml` so users can run:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -916,6 +917,367 @@ def chart(
         if indicator_list:
             console.print(f"  Indicators: {', '.join(indicator_list)}")
         console.print("\n[dim]Tip: Use --export chart.html to save the interactive chart.[/]")
+
+
+# ---------------------------------------------------------------------------
+# Schedule sub-app
+# ---------------------------------------------------------------------------
+schedule_app = typer.Typer(help="Automated scheduled scanning.", no_args_is_help=True)
+app.add_typer(schedule_app, name="schedule")
+
+
+@schedule_app.command("run")
+def cmd_schedule_run(
+    action: str = typer.Option("check_alerts", "--action", "-a",
+        help="check_alerts|screen_bpjs|screen_breakout|generate_signals"),
+    universe: str = typer.Option("LQ45", "--universe", "-u"),
+    notify: bool = typer.Option(True, "--notify/--no-notify"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Run a scheduled action once (for cron/systemd integration)."""
+    from saham_id.scheduler import Scheduler, ScheduledTask
+
+    task = ScheduledTask(
+        name=f"cli_{action}",
+        interval_minutes=0,
+        action=action,  # type: ignore
+        params={"universe": universe, "source": source},
+        notify_on_results=notify,
+    )
+
+    scheduler = Scheduler()
+    scheduler.add_task(task)
+
+    with console.status(f"Running {action}..."):
+        results = scheduler.run_due_tasks()
+
+    for r in results:
+        status = "[green]OK[/]" if r.success else "[red]FAIL[/]"
+        console.print(f"  {r.task_name}: {status} — {r.message}")
+
+
+@schedule_app.command("list")
+def cmd_schedule_list() -> None:
+    """Show available scheduled actions."""
+    actions = [
+        ("check_alerts", "Check watchlist alerts against live data"),
+        ("screen_bpjs", "Run BPJS screener"),
+        ("screen_bsjp", "Run BSJP screener"),
+        ("screen_breakout", "Run swing breakout screener"),
+        ("screen_pullback", "Run swing pullback screener"),
+        ("screen_reversal", "Run swing reversal screener"),
+        ("screen_scalping", "Run scalping screener"),
+        ("generate_signals", "Generate composite BUY/SELL signals"),
+        ("market_breadth", "Get market breadth snapshot"),
+    ]
+    table = Table(title="Available Scheduled Actions")
+    table.add_column("Action", style="cyan")
+    table.add_column("Description")
+    for action, desc in actions:
+        table.add_row(action, desc)
+    console.print(table)
+    console.print("\n[dim]Usage: saham schedule run --action screen_bpjs --universe LQ45[/]")
+    console.print("[dim]For cron: */30 * * * 1-5 saham schedule run --action check_alerts --notify[/]")
+
+
+# ---------------------------------------------------------------------------
+# Report command
+# ---------------------------------------------------------------------------
+@app.command()
+def report(
+    ticker: str = typer.Argument(..., help="IDX ticker for full report"),
+    period: str = typer.Option("6mo", "--period", "-p"),
+    output: str = typer.Option("", "--output", "-o", help="Output HTML file (default: report_{ticker}.html)"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Generate a comprehensive HTML report for a single stock.
+
+    Includes: price chart, indicators, scorecard, signals, support/resistance.
+    """
+    from saham_id.charting.candlestick import candlestick_chart
+    from saham_id.charting.indicators import multi_indicator_chart
+    from datetime import datetime
+
+    src = get_source(source)
+    out_path = output or f"report_{ticker.lower()}.html"
+
+    with console.status(f"Generating report for {ticker}..."):
+        df = src.get_ohlc(ticker, period=period, interval="1d")  # type: ignore
+
+        if df.empty:
+            console.print(f"[red]No data for {ticker}[/]")
+            raise typer.Exit(1)
+
+        # Generate charts
+        fig_price = candlestick_chart(df, ticker=ticker, ma_periods=[20, 50, 200], show_volume=True)
+        fig_ind = multi_indicator_chart(df, indicators=["rsi", "macd", "volume"], ticker=ticker)
+
+        # Build HTML
+        price_html = fig_price.to_html(full_html=False, include_plotlyjs="cdn")
+        ind_html = fig_ind.to_html(full_html=False, include_plotlyjs=False)
+
+        last = df["close"].iloc[-1]
+        prev = df["close"].iloc[-2] if len(df) > 1 else last
+        change_pct = (last - prev) / prev * 100
+
+        html = f"""<!DOCTYPE html>
+<html><head>
+<title>Report: {ticker}</title>
+<meta charset="utf-8">
+<style>
+body {{ font-family: 'Inter', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 20px; }}
+h1, h2 {{ color: #89b4fa; }}
+.metrics {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }}
+.metric {{ background: #2d2d3d; padding: 15px; border-radius: 8px; text-align: center; }}
+.metric .value {{ font-size: 1.5em; font-weight: bold; }}
+.metric .label {{ font-size: 0.8em; color: #888; }}
+.section {{ margin: 30px 0; }}
+footer {{ margin-top: 40px; color: #666; font-size: 0.8em; }}
+</style>
+</head><body>
+<h1>Stock Report: {ticker}</h1>
+<p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Period: {period} | Bars: {len(df)}</p>
+
+<div class="metrics">
+  <div class="metric"><div class="value">Rp {last:,.0f}</div><div class="label">Last Price</div></div>
+  <div class="metric"><div class="value" style="color:{'#26a69a' if change_pct >= 0 else '#ef5350'}">{change_pct:+.2f}%</div><div class="label">Change</div></div>
+  <div class="metric"><div class="value">Rp {df['high'].max():,.0f}</div><div class="label">Period High</div></div>
+  <div class="metric"><div class="value">Rp {df['low'].min():,.0f}</div><div class="label">Period Low</div></div>
+</div>
+
+<div class="section">
+<h2>Price Chart</h2>
+{price_html}
+</div>
+
+<div class="section">
+<h2>Technical Indicators</h2>
+{ind_html}
+</div>
+
+<footer>
+saham-indonesia — Generated by <code>saham report {ticker}</code>
+</footer>
+</body></html>"""
+
+        Path(out_path).write_text(html, encoding="utf-8")
+
+    console.print(f"[green]Report saved to {out_path}[/]")
+    console.print(f"  {ticker}: Rp {last:,.0f} ({change_pct:+.2f}%) | {len(df)} bars")
+
+
+# ---------------------------------------------------------------------------
+# Paper trading sub-app
+# ---------------------------------------------------------------------------
+paper_app = typer.Typer(help="Paper trading simulation.", no_args_is_help=True)
+app.add_typer(paper_app, name="paper")
+
+
+@paper_app.command("buy")
+def cmd_paper_buy(
+    ticker: str = typer.Argument(..., help="IDX ticker to buy"),
+    lots: int = typer.Option(1, "--lots", "-l", help="Number of lots (1 lot = 100 shares)"),
+    session: str = typer.Option("default", "--session", help="Paper trading session name"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Buy stock at current market price (paper trading)."""
+    from saham_id.paper_trading import PaperTrader
+
+    src = get_source(source)
+    trader = PaperTrader.load(session, source=src)
+
+    order = trader.buy(ticker, lots=lots)
+    trader.save(session)
+
+    if order.status == "filled":
+        console.print(
+            f"[green]BUY {ticker} {lots} lot @ Rp {order.price:,.0f}[/] "
+            f"(Total: Rp {order.price * order.shares:,.0f})"
+        )
+        console.print(f"  Cash remaining: Rp {trader.cash:,.0f}")
+    else:
+        console.print(f"[red]Order rejected: {order.note}[/]")
+
+
+@paper_app.command("sell")
+def cmd_paper_sell(
+    ticker: str = typer.Argument(..., help="IDX ticker to sell"),
+    lots: int = typer.Option(1, "--lots", "-l", help="Number of lots to sell"),
+    session: str = typer.Option("default", "--session", help="Paper trading session name"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Sell stock at current market price (paper trading)."""
+    from saham_id.paper_trading import PaperTrader
+
+    src = get_source(source)
+    trader = PaperTrader.load(session, source=src)
+
+    order = trader.sell(ticker, lots=lots)
+    trader.save(session)
+
+    if order.status == "filled":
+        console.print(
+            f"[red]SELL {ticker} {lots} lot @ Rp {order.price:,.0f}[/] "
+            f"(Proceeds: Rp {order.price * order.shares:,.0f})"
+        )
+        console.print(f"  Cash: Rp {trader.cash:,.0f}")
+    else:
+        console.print(f"[red]Order rejected: {order.note}[/]")
+
+
+@paper_app.command("portfolio")
+def cmd_paper_portfolio(
+    session: str = typer.Option("default", "--session", help="Paper trading session name"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Show paper trading portfolio summary."""
+    from saham_id.paper_trading import PaperTrader
+
+    src = get_source(source)
+    trader = PaperTrader.load(session, source=src)
+    summary = trader.summary()
+
+    # Portfolio overview
+    table = Table(title=f"Paper Trading — {session}")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_row("Initial Capital", f"Rp {summary['initial_capital']:,.0f}")
+    table.add_row("Cash", f"Rp {summary['cash']:,.0f}")
+    table.add_row("Portfolio Value", f"Rp {summary['portfolio_value']:,.0f}")
+
+    pnl = summary['total_pnl']
+    pnl_color = "green" if pnl >= 0 else "red"
+    table.add_row("Total P/L", f"[{pnl_color}]Rp {pnl:,.0f}[/]")
+    table.add_row("Return", f"[{pnl_color}]{summary['total_return_pct']:.2%}[/]")
+    table.add_row("Trades", str(summary['num_trades']))
+    console.print(table)
+
+    # Positions
+    if summary['positions']:
+        pos_table = Table(title="Open Positions")
+        pos_table.add_column("Ticker", style="cyan")
+        pos_table.add_column("Shares", justify="right")
+        pos_table.add_column("Avg Cost", justify="right")
+        pos_table.add_column("Realized P/L", justify="right")
+        for ticker, pos in summary['positions'].items():
+            rpnl = pos['realized_pnl']
+            rpnl_color = "green" if rpnl >= 0 else "red"
+            pos_table.add_row(
+                ticker,
+                f"{pos['shares']:,}",
+                f"Rp {pos['avg_cost']:,.0f}",
+                f"[{rpnl_color}]Rp {rpnl:,.0f}[/]",
+            )
+        console.print(pos_table)
+    else:
+        console.print("[dim]No open positions.[/]")
+
+
+@paper_app.command("history")
+def cmd_paper_history(
+    session: str = typer.Option("default", "--session"),
+    tail: int = typer.Option(20, "--tail", "-n", help="Show last N trades"),
+) -> None:
+    """Show paper trading trade history."""
+    from saham_id.paper_trading import PaperTrader
+
+    trader = PaperTrader.load(session)
+
+    if not trader.trades:
+        console.print("[yellow]No trades yet.[/]")
+        return
+
+    table = Table(title=f"Trade History — {session} (last {tail})")
+    table.add_column("Time")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Side")
+    table.add_column("Shares", justify="right")
+    table.add_column("Price", justify="right")
+    table.add_column("Value", justify="right")
+    table.add_column("Fee", justify="right")
+
+    for trade in trader.trades[-tail:]:
+        side_color = "green" if trade.side == "buy" else "red"
+        table.add_row(
+            trade.timestamp.strftime("%m/%d %H:%M"),
+            trade.ticker,
+            f"[{side_color}]{trade.side.upper()}[/]",
+            f"{trade.shares:,}",
+            f"Rp {trade.price:,.0f}",
+            f"Rp {trade.value:,.0f}",
+            f"Rp {trade.fee:,.0f}",
+        )
+    console.print(table)
+
+
+@paper_app.command("reset")
+def cmd_paper_reset(
+    session: str = typer.Option("default", "--session"),
+    capital: float = typer.Option(100_000_000, "--capital", "-c"),
+    confirm: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Reset paper trading session (clear all positions and trades)."""
+    from saham_id.paper_trading import PaperTrader
+
+    if not confirm:
+        if not typer.confirm(f"Reset session '{session}'? All trades will be lost."):
+            console.print("[dim]Cancelled.[/]")
+            return
+
+    trader = PaperTrader(initial_capital=capital)
+    trader.save(session)
+    console.print(f"[green]Session '{session}' reset. Capital: Rp {capital:,.0f}[/]")
+
+
+# ---------------------------------------------------------------------------
+# Compare command
+# ---------------------------------------------------------------------------
+@app.command()
+def compare(
+    tickers: str = typer.Argument(..., help="Tickers to compare (comma-separated), e.g. BBCA,BBRI,BMRI"),
+    period: str = typer.Option("6mo", "--period", "-p"),
+    export: Optional[str] = typer.Option(None, "--export", "-o", help="Export chart to HTML"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Compare performance of multiple stocks (rebased to 100)."""
+    from saham_id.charting.comparison import comparison_chart
+
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if len(ticker_list) < 2:
+        console.print("[red]Provide at least 2 tickers separated by comma.[/]")
+        raise typer.Exit(1)
+
+    src = get_source(source)
+    dataframes = {}
+
+    with console.status(f"Fetching data for {', '.join(ticker_list)}..."):
+        for ticker in ticker_list:
+            try:
+                df = src.get_ohlc(ticker, period=period, interval="1d")  # type: ignore
+                if not df.empty:
+                    dataframes[ticker] = df
+            except Exception as e:
+                console.print(f"[yellow]Skipped {ticker}: {e}[/]")
+
+    if len(dataframes) < 2:
+        console.print("[red]Need at least 2 tickers with data.[/]")
+        raise typer.Exit(1)
+
+    fig = comparison_chart(dataframes, title=f"Comparison: {', '.join(dataframes.keys())}")
+
+    if export:
+        fig.write_html(export)
+        console.print(f"[green]Chart exported to {export}[/]")
+    else:
+        # Print summary
+        console.print(f"\n[bold]Comparison ({period})[/]")
+        for ticker, df in dataframes.items():
+            first = df["close"].iloc[0]
+            last = df["close"].iloc[-1]
+            ret = (last - first) / first * 100 if first else 0
+            color = "green" if ret >= 0 else "red"
+            console.print(f"  [{color}]{ticker}: {ret:+.2f}%[/] (Rp {first:,.0f} → Rp {last:,.0f})")
+        console.print("\n[dim]Tip: Use --export compare.html to save chart.[/]")
 
 
 # ---------------------------------------------------------------------------
