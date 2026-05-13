@@ -10,7 +10,7 @@ def render() -> None:
     st.markdown(
         """
         <div style="margin-bottom: 20px;">
-            <h2 style="margin:0; color:#f1f5f9;">💡 Investment Advisor</h2>
+            <h2 style="margin:0; color:#f1f5f9;">Investment Advisor</h2>
             <p style="color:#94a3b8; margin:4px 0 0 0; font-size:0.9em;">
                 Analisis komprehensif sebelum keputusan investasi — <strong>tujuan: jangan sampai loss.</strong>
             </p>
@@ -23,21 +23,20 @@ def render() -> None:
     with st.container():
         col1, col2, col3, col4 = st.columns([2, 2, 1, 1.5])
         with col1:
-            ticker = st.text_input("🏷️ Ticker", value="BBCA", max_chars=10, placeholder="Masukkan ticker").upper()
+            ticker = st.text_input("Ticker", value="BBCA", max_chars=10, placeholder="Masukkan ticker").upper()
         with col2:
-            budget = st.number_input("💰 Budget (Rp)", value=50_000_000, step=10_000_000, min_value=1_000_000)
+            budget = st.number_input("Budget (Rp)", value=50_000_000, step=10_000_000, min_value=1_000_000)
         with col3:
-            risk_pct = st.selectbox("⚠️ Risk/Trade", [1.0, 1.5, 2.0, 2.5, 3.0], index=2, format_func=lambda x: f"{x}%")
+            risk_pct = st.selectbox("Risk/Trade", [1.0, 1.5, 2.0, 2.5, 3.0], index=2, format_func=lambda x: f"{x}%")
         with col4:
             st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            analyze_btn = st.button("🔍 Analisis Sekarang", type="primary", use_container_width=True)
+            analyze_btn = st.button("Analisis Sekarang", type="primary", use_container_width=True)
 
     if not analyze_btn:
         # Show placeholder
         st.markdown(
             """
             <div style="text-align:center; padding: 60px 20px; color: #64748b;">
-                <div style="font-size: 3em; margin-bottom: 16px;">💡</div>
                 <div style="font-size: 1.1em; font-weight: 500;">Masukkan ticker dan klik "Analisis Sekarang"</div>
                 <div style="font-size: 0.85em; margin-top: 8px;">
                     Sistem akan menganalisis trend, momentum, bandar, foreign flow, dan risk/reward
@@ -98,12 +97,12 @@ def render() -> None:
         # === COMPONENT SCORES ===
         st.markdown("##### Component Scores")
         components = [
-            ("Trend", decision.trend_score, "📈"),
-            ("Momentum", decision.momentum_score, "🚀"),
-            ("Volume", decision.volume_score, "📊"),
-            ("Bandar", decision.bandar_score, "🎯"),
-            ("Foreign Flow", decision.foreign_flow_score, "🌐"),
-            ("S/R Position", decision.support_resistance_score, "🛡️"),
+            ("Trend", decision.trend_score, "T"),
+            ("Momentum", decision.momentum_score, "M"),
+            ("Volume", decision.volume_score, "V"),
+            ("Bandar", decision.bandar_score, "B"),
+            ("Foreign Flow", decision.foreign_flow_score, "F"),
+            ("S/R Position", decision.support_resistance_score, "S"),
         ]
 
         cols = st.columns(6)
@@ -135,9 +134,9 @@ def render() -> None:
         r4.metric("Target 2", f"Rp {rr.target_2:,.0f}", delta=f"+{rr.reward_pct:.1f}%")
 
         if rr.is_favorable:
-            st.success(f"✅ Risk:Reward FAVORABLE — {rr.risk_reward_ratio:.1f}:1 (risiko Rp {rr.risk_amount:,.0f}, potensi Rp {rr.reward_amount:,.0f})")
+            st.success(f"Risk:Reward FAVORABLE — {rr.risk_reward_ratio:.1f}:1 (risiko Rp {rr.risk_amount:,.0f}, potensi Rp {rr.reward_amount:,.0f})")
         else:
-            st.warning(f"⚠️ Risk:Reward KURANG IDEAL — {rr.risk_reward_ratio:.1f}:1 (butuh minimal 2:1)")
+            st.warning(f"Risk:Reward KURANG IDEAL — {rr.risk_reward_ratio:.1f}:1 (butuh minimal 2:1)")
 
         st.markdown("")
 
@@ -153,32 +152,32 @@ def render() -> None:
         st.markdown("")
 
         # === EXIT PLAN ===
-        with st.expander("📋 Exit Plan (Aturan Keluar)", expanded=False):
+        with st.expander("Exit Plan (Aturan Keluar)", expanded=False):
             for condition in decision.exit_plan.exit_conditions:
-                st.markdown(f"• {condition}")
+                st.markdown(f"- {condition}")
 
         # === REASONS ===
         col_bull, col_bear = st.columns(2)
 
         with col_bull:
-            with st.expander("🟢 Alasan Bullish", expanded=True):
+            with st.expander("Alasan Bullish", expanded=True):
                 if decision.bullish_reasons:
                     for reason in decision.bullish_reasons:
-                        st.markdown(f"✅ {reason}")
+                        st.markdown(f"- {reason}")
                 else:
                     st.caption("Tidak ada sinyal bullish signifikan.")
 
         with col_bear:
-            with st.expander("🔴 Alasan Bearish", expanded=True):
+            with st.expander("Alasan Bearish", expanded=True):
                 if decision.bearish_reasons:
                     for reason in decision.bearish_reasons:
-                        st.markdown(f"❌ {reason}")
+                        st.markdown(f"- {reason}")
                 else:
                     st.caption("Tidak ada sinyal bearish signifikan.")
 
         # === WARNINGS ===
         if decision.warnings:
-            st.markdown("##### ⚠️ Peringatan")
+            st.markdown("##### Peringatan")
             for warning in decision.warnings:
                 st.warning(warning)
 
@@ -187,10 +186,10 @@ def render() -> None:
         if decision.should_buy:
             st.success(
                 f"**REKOMENDASI: {decision.verdict.value} {ticker}**\n\n"
-                f"• Beli **{pos.lots} lot** di Rp {rr.entry_price:,.0f}\n"
-                f"• Stop-loss di Rp {rr.stop_loss:,.0f}\n"
-                f"• Target: Rp {rr.target_1:,.0f} → {rr.target_2:,.0f} → {rr.target_3:,.0f}\n"
-                f"• Max loss: Rp {pos.max_loss:,.0f} ({pos.risk_per_trade:.1f}% risk)"
+                f"- Beli **{pos.lots} lot** di Rp {rr.entry_price:,.0f}\n"
+                f"- Stop-loss di Rp {rr.stop_loss:,.0f}\n"
+                f"- Target: Rp {rr.target_1:,.0f} > {rr.target_2:,.0f} > {rr.target_3:,.0f}\n"
+                f"- Max loss: Rp {pos.max_loss:,.0f} ({pos.risk_per_trade:.1f}% risk)"
             )
         else:
             st.info(

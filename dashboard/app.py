@@ -20,7 +20,7 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Saham Indonesia",
-    page_icon="📈",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -39,7 +39,6 @@ with st.sidebar:
     st.markdown(
         """
         <div style="text-align:center; padding: 10px 0 20px 0;">
-            <div style="font-size: 2em;">📈</div>
             <div style="font-size: 1.3em; font-weight: 700; color: #f1f5f9; margin-top: 4px;">
                 Saham Indonesia
             </div>
@@ -53,21 +52,21 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Navigation with icons
+    # Navigation
     PAGES = {
-        "💡 Investment Advisor": "Investment Advisor",
-        "🌐 Market Overview": "Market Overview",
-        "⚡ Real-time": "Real-time",
-        "🗺️ Heatmap": "Heatmap",
-        "📊 Technical Chart": "Technical Chart",
-        "📈 Compare": "Compare",
-        "🏆 Score Card": "Score Card",
-        "🎯 Bandarmology": "Bandarmology",
-        "🔔 Sinyal": "Sinyal",
-        "🔍 Screener": "Screener",
-        "🧪 Backtest": "Backtest",
-        "💼 Portfolio": "Portfolio",
-        "⭐ Watchlist & Fee": "Watchlist & Fee",
+        "Investment Advisor": "Investment Advisor",
+        "Market Overview": "Market Overview",
+        "Real-time": "Real-time",
+        "Heatmap": "Heatmap",
+        "Technical Chart": "Technical Chart",
+        "Compare": "Compare",
+        "Score Card": "Score Card",
+        "Bandarmology": "Bandarmology",
+        "Sinyal": "Sinyal",
+        "Screener": "Screener",
+        "Backtest": "Backtest",
+        "Portfolio": "Portfolio",
+        "Watchlist & Fee": "Watchlist & Fee",
     }
 
     page = st.radio(
