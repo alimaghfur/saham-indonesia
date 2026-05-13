@@ -58,7 +58,7 @@ def get_source(name: Optional[str] = None, cached: bool = True) -> DataSource:
 
     source = _REGISTRY[key]()
 
-    if cached:
+    if cached and settings.cache_enabled:
         source = CachedDataSource(source)
         logger.debug(f"Created cached source: {source}")
 

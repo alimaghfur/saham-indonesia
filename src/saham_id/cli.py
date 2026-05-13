@@ -37,8 +37,10 @@ console = Console()
 # Sub-apps
 movers_app = typer.Typer(help="Top gainers / losers / most active.", no_args_is_help=True)
 screen_app = typer.Typer(help="Strategy screeners.", no_args_is_help=True)
+cache_app = typer.Typer(help="Cache management commands.", no_args_is_help=True)
 app.add_typer(movers_app, name="movers")
 app.add_typer(screen_app, name="screen")
+app.add_typer(cache_app, name="cache")
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +470,153 @@ def cmd_position_size(
     table.add_row("Risk % of Capital", f"{result.risk_pct_of_capital:.2%}")
     table.add_row("Stop Loss", f"Rp {result.stop_loss_price:,.0f}" if result.stop_loss_price else "-")
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Cache sub-app
+# ---------------------------------------------------------------------------
+@cache_app.command("stats")
+def cmd_cache_stats() -> None:
+    """Show cache statistics (memory + disk usage)."""
+    from saham_id.cache import cache
+
+    stats = cache.stats()
+    table = Table(title="Cache Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_row("Memory Items", f"{stats['memory_items']:,}")
+    table.add_row("Memory Max Size", f"{stats['memory_maxsize']:,}")
+    table.add_row("Disk Items", f"{stats['disk_items']:,}")
+    table.add_row("Disk Size", _human_bytes(stats['disk_size_bytes']))
+    table.add_row("Disk Enabled", "Yes" if stats['disk_enabled'] else "No")
+    table.add_row("Cache Dir", stats['cache_dir'])
+    console.print(table)
+
+
+@cache_app.command("clear")
+def cmd_cache_clear(
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+) -> None:
+    """Clear all cached data (memory + disk)."""
+    from saham_id.cache import cache
+
+    if not confirm:
+        stats = cache.stats()
+        total_items = stats['memory_items'] + stats['disk_items']
+        if total_items == 0:
+            console.print("[yellow]Cache is already empty.[/]")
+            return
+        msg = f"Clear {total_items} cached items ({_human_bytes(stats['disk_size_bytes'])} on disk)?"
+        if not typer.confirm(msg):
+            console.print("[dim]Cancelled.[/]")
+            return
+
+    cache.clear()
+    console.print("[green]Cache cleared successfully.[/]")
+
+
+def _human_bytes(n: int) -> str:
+    """Format bytes to human-readable string."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(n) < 1024:
+            return f"{n:.1f} {unit}"
+        n /= 1024  # type: ignore
+    return f"{n:.1f} TB"
+
+
+# ---------------------------------------------------------------------------
+# Chart command
+# ---------------------------------------------------------------------------
+@app.command()
+def chart(
+    ticker: str = typer.Argument(..., help="IDX ticker, e.g. BBCA"),
+    period: str = typer.Option("6mo", "--period", "-p", help="Data period (1mo/3mo/6mo/1y/2y/5y)"),
+    interval: str = typer.Option("1d", "--interval", "-i", help="Data interval (1d/1wk/1mo)"),
+    indicators: Optional[str] = typer.Option(
+        None, "--indicators", "-I",
+        help="Comma-separated indicators: rsi,macd,bollinger,stochastic,atr,volume",
+    ),
+    ma: Optional[str] = typer.Option(
+        "20,50", "--ma", "-m",
+        help="Moving average periods (comma-separated, e.g. 20,50,200)",
+    ),
+    chart_type: str = typer.Option(
+        "candlestick", "--type", "-t", help="Chart type: candlestick or ohlc",
+    ),
+    dark: bool = typer.Option(True, "--dark/--light", help="Dark or light theme"),
+    export: Optional[str] = typer.Option(
+        None, "--export", "-o",
+        help="Export chart to file (HTML or PNG). E.g. chart_bbca.html",
+    ),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Generate an interactive technical chart and optionally export to file."""
+    from saham_id.charting.candlestick import candlestick_chart, ohlc_chart
+    from saham_id.charting.indicators import multi_indicator_chart
+
+    src = get_source(source)
+
+    with console.status(f"Fetching {ticker} data ({period}, {interval})..."):
+        df = src.get_ohlc(ticker, period=period, interval=interval)  # type: ignore[arg-type]
+
+    if df.empty:
+        console.print(f"[red]No data for {ticker}[/]")
+        raise typer.Exit(1)
+
+    # Parse MA periods
+    ma_periods = None
+    if ma:
+        try:
+            ma_periods = [int(x.strip()) for x in ma.split(",") if x.strip()]
+        except ValueError:
+            console.print("[red]Invalid --ma format. Use comma-separated integers: 20,50,200[/]")
+            raise typer.Exit(1)
+
+    # Parse indicators
+    indicator_list = []
+    if indicators:
+        indicator_list = [x.strip().lower() for x in indicators.split(",") if x.strip()]
+
+    # Generate main chart
+    if chart_type.lower() == "ohlc":
+        fig = ohlc_chart(df, ticker=ticker, show_volume=True, dark=dark)
+    else:
+        fig = candlestick_chart(
+            df, ticker=ticker, ma_periods=ma_periods,
+            show_volume=True, dark=dark,
+        )
+
+    # If indicators requested, generate multi-panel instead
+    if indicator_list:
+        fig = multi_indicator_chart(
+            df, indicators=indicator_list, ticker=ticker, dark=dark,
+        )
+
+    # Export or display info
+    if export:
+        export_path = export.strip()
+        if export_path.endswith(".html"):
+            fig.write_html(export_path)
+            console.print(f"[green]Chart exported to {export_path}[/]")
+        elif export_path.endswith(".png"):
+            fig.write_image(export_path)
+            console.print(f"[green]Chart exported to {export_path}[/]")
+        else:
+            fig.write_html(export_path)
+            console.print(f"[green]Chart exported to {export_path} (HTML)[/]")
+    else:
+        # Show summary since we can't open a browser in CLI
+        last = df["close"].iloc[-1]
+        prev = df["close"].iloc[-2] if len(df) > 1 else last
+        change_pct = (last - prev) / prev * 100
+        console.print(f"\n[bold cyan]{ticker}[/] — {chart_type.title()}")
+        console.print(f"  Last: {format_rupiah(last)}  Change: {change_pct:+.2f}%")
+        console.print(f"  Period: {period}  Interval: {interval}  Bars: {len(df)}")
+        if ma_periods:
+            console.print(f"  MAs: {ma_periods}")
+        if indicator_list:
+            console.print(f"  Indicators: {', '.join(indicator_list)}")
+        console.print("\n[dim]Tip: Use --export chart.html to save the interactive chart.[/]")
 
 
 # ---------------------------------------------------------------------------

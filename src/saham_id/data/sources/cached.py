@@ -27,6 +27,7 @@ from saham_id.cache import (
     cache,
     _make_cache_key,
 )
+from saham_id.config import settings as _settings
 from saham_id.data.models import FundamentalSnapshot, Mover, Quote
 from saham_id.data.sources.base import (
     DataSource,
@@ -85,11 +86,13 @@ class CachedDataSource(DataSource):
         self,
         inner: DataSource,
         enable_cache: bool = True,
-        max_retries: int = 3,
+        max_retries: Optional[int] = None,
     ) -> None:
+        from saham_id.config import settings as _settings
+
         self._inner = inner
         self._enable_cache = enable_cache
-        self._max_retries = max_retries
+        self._max_retries = max_retries if max_retries is not None else _settings.retry_max_attempts
 
     @property
     def name(self) -> str:
@@ -123,7 +126,12 @@ class CachedDataSource(DataSource):
 
         return quote
 
-    @retry_on_failure(max_retries=3, retry_on=(DataSourceError, SourceError))
+    @retry_on_failure(
+        max_retries=_settings.retry_max_attempts,
+        retry_on=(DataSourceError, SourceError),
+        min_wait=_settings.retry_min_wait,
+        max_wait=_settings.retry_max_wait,
+    )
     def _fetch_quote_with_retry(self, ticker: str) -> Quote:
         try:
             return self._inner.get_quote(ticker)
@@ -202,7 +210,12 @@ class CachedDataSource(DataSource):
 
         return df
 
-    @retry_on_failure(max_retries=3, retry_on=(DataSourceError, SourceError))
+    @retry_on_failure(
+        max_retries=_settings.retry_max_attempts,
+        retry_on=(DataSourceError, SourceError),
+        min_wait=_settings.retry_min_wait,
+        max_wait=_settings.retry_max_wait,
+    )
     def _fetch_ohlc_with_retry(
         self, ticker: str, period: Period, interval: Interval
     ) -> pd.DataFrame:

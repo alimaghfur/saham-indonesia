@@ -130,12 +130,15 @@ class CacheManager:
         for k in keys_to_remove:
             self._memory.pop(k, None)
 
-        # Disk
-        if self._enable_disk:
-            for path in self._cache_dir.glob(f"{prefix}*"):
+        # Disk — iterate all cache files and check stored key
+        if self._enable_disk and self._cache_dir.exists():
+            for path in self._cache_dir.glob("*.cache"):
                 try:
-                    path.unlink()
-                except OSError:
+                    with open(path, "rb") as f:
+                        entry = pickle.load(f)
+                    if entry.get("key", "").startswith(prefix):
+                        path.unlink(missing_ok=True)
+                except (pickle.UnpicklingError, OSError, KeyError, EOFError):
                     pass
 
     def clear(self) -> None:
@@ -211,9 +214,14 @@ class CacheManager:
 
 
 # ------------------------------------------------------------------
-# Global singleton
+# Global singleton (reads from settings)
 # ------------------------------------------------------------------
-cache = CacheManager()
+cache = CacheManager(
+    cache_dir=settings.cache_dir,
+    memory_maxsize=settings.cache_memory_maxsize,
+    default_ttl=settings.cache_default_ttl,
+    enable_disk=settings.cache_disk_enabled,
+)
 
 
 # ------------------------------------------------------------------

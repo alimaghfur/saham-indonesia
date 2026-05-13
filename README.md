@@ -6,7 +6,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-467%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-573%20passing-brightgreen.svg)]()
 
 ---
 
@@ -132,6 +132,36 @@
 | IDX Calendar | Hari libur 2025-2026 + auto-detection |
 | Scoring Model Builder | Custom screener tanpa coding |
 
+### 📊 Charting (Plotly)
+| Fitur | Deskripsi |
+|-------|-----------|
+| Candlestick + OHLC | Interactive charts with MA overlay, volume bars |
+| Indicator Panels | RSI, MACD, Bollinger, Stochastic, ATR — single & multi-panel |
+| Support/Resistance | Auto pivot-based S/R horizontal lines |
+| Portfolio Charts | Equity curve, drawdown, allocation pie, monthly returns |
+| IDX Theme | Dark/light theme optimized untuk saham Indonesia |
+| Export | HTML interaktif, PNG static |
+| CLI | `saham chart BBCA --indicators rsi,macd --export chart.html` |
+
+### ⚡ Caching & Performance
+| Fitur | Deskripsi |
+|-------|-----------|
+| Memory Cache | TTLCache in-memory dengan auto-expiry |
+| Disk Cache | Persistent pickle cache survive restart |
+| CachedDataSource | Transparent caching layer untuk semua data source |
+| Interval-Aware TTL | 60s untuk quote, 5m intraday, 1h daily, 24h fundamental |
+| Configurable | Semua settings via environment variables |
+| CLI Management | `saham cache stats` / `saham cache clear` |
+
+### 🛡️ Error Handling
+| Fitur | Deskripsi |
+|-------|-----------|
+| Exception Hierarchy | SahamError → DataSourceError → RateLimitError, etc. |
+| Retry Decorator | Exponential backoff via tenacity (configurable) |
+| Error Boundary | Context manager untuk graceful degradation |
+| ErrorCollector | Batch operations — collect errors tanpa stop execution |
+| Structured Errors | `.to_dict()` serialization untuk logging/API |
+
 ---
 
 ## Instalasi
@@ -241,6 +271,18 @@ saham screen unusual                   # Unusual activity
 saham signals --universe IDX30         # Generate BUY/SELL signals
 saham mtf BBCA                         # Multi-timeframe analysis
 saham position-size --entry 9500 --stop 9000  # Position sizing
+
+# === CHARTING ===
+saham chart BBCA                       # Interactive candlestick chart
+saham chart BBCA --indicators rsi,macd # With indicator panels
+saham chart BBCA --ma 20,50,200        # Custom moving averages
+saham chart BBCA --type ohlc --light   # OHLC, light theme
+saham chart BBCA --export chart.html   # Export to HTML file
+saham chart BBCA -I bollinger -p 1y    # Bollinger Bands, 1 year
+
+# === CACHE ===
+saham cache stats                      # Show cache memory/disk usage
+saham cache clear --yes                # Clear all cached data
 ```
 
 ---
@@ -408,6 +450,104 @@ wl.save()
 triggered = wl.check_alerts()
 ```
 
+### Charting
+
+```python
+from saham_id.charting import candlestick_chart, indicator_chart, multi_indicator_chart
+from saham_id.charting.portfolio import equity_curve, drawdown_chart, allocation_pie
+from saham_id.charting.styles import register_idx_template
+from saham_id.data import get_source
+
+# Candlestick chart with MA overlay
+src = get_source()
+df = src.get_ohlc("BBCA", period="6mo")
+fig = candlestick_chart(df, ticker="BBCA", ma_periods=[20, 50], show_volume=True)
+fig.write_html("bbca_chart.html")
+
+# Multi-indicator panel (RSI + MACD + Volume)
+fig = multi_indicator_chart(df, indicators=["rsi", "macd", "volume"], ticker="BBCA")
+fig.write_html("bbca_indicators.html")
+
+# Single indicator chart
+fig = indicator_chart(df, indicator="bollinger", ticker="BBCA", period=20)
+
+# Portfolio equity curve
+import pandas as pd
+returns = pd.Series([0.01, -0.005, 0.02, 0.003, -0.01])
+fig = equity_curve(returns, initial_capital=100_000_000)
+
+# Allocation pie chart
+holdings = {"BBCA": 30_000_000, "BBRI": 20_000_000, "TLKM": 10_000_000}
+fig = allocation_pie(holdings)
+```
+
+### Caching
+
+```python
+from saham_id.cache import cache, cached, TTL_QUOTE, TTL_OHLC_DAILY
+
+# Manual cache usage
+cache.set("my_key", {"data": [1, 2, 3]}, ttl=300)
+value = cache.get("my_key")      # Hit
+cache.invalidate("my_key")       # Remove
+cache.clear()                    # Clear all
+
+# Decorator caching
+@cached(ttl=60, prefix="custom")
+def expensive_computation(ticker: str):
+    # Computed once, cached for 60s
+    return analyze(ticker)
+
+result = expensive_computation("BBCA")
+expensive_computation.cache_clear()  # Invalidate all entries
+
+# Cache statistics
+stats = cache.stats()
+print(f"Memory: {stats['memory_items']}/{stats['memory_maxsize']}")
+print(f"Disk: {stats['disk_items']} files, {stats['disk_size_bytes']} bytes")
+
+# CachedDataSource is used automatically
+from saham_id.data.sources import get_source
+src = get_source("yahoo")  # Wrapped with CachedDataSource by default
+q = src.get_quote("BBCA")  # Cached for 60s
+q = src.get_quote("BBCA")  # Cache hit — no network call
+```
+
+### Error Handling
+
+```python
+from saham_id.errors import (
+    SahamError, DataSourceError, RateLimitError, DataNotFoundError,
+    retry_on_failure, error_boundary, ErrorCollector,
+)
+
+# Retry with exponential backoff
+@retry_on_failure(max_retries=3, retry_on=(DataSourceError,), min_wait=1.0)
+def fetch_data(ticker: str):
+    return source.get_quote(ticker)
+
+# Graceful error boundary
+with error_boundary("fetching BBCA", default=None):
+    quote = source.get_quote("BBCA")
+    # If this fails, error is logged but execution continues
+
+# Batch error collection
+collector = ErrorCollector()
+for ticker in ["BBCA", "BBRI", "INVALID"]:
+    with collector.catch(ticker):
+        process(ticker)
+
+if collector.has_errors:
+    print(collector.summary())  # "1 error(s): [INVALID] DataNotFoundError: ..."
+
+# Structured error info
+try:
+    source.get_quote("ZZZZ")
+except DataNotFoundError as e:
+    print(e.to_dict())
+    # {"error": "DataNotFoundError", "message": "...", "details": {"ticker": "ZZZZ"}, ...}
+```
+
 ---
 
 ## Dashboard Streamlit
@@ -500,6 +640,14 @@ streamlit run dashboard/app.py
 | Utils | Formatting | `utils/formatting.py` |
 | Utils | Calendar (holidays) | `utils/calendar.py` |
 | Utils | Logging | `utils/logging.py` |
+| Charting | Candlestick/OHLC | `charting/candlestick.py` |
+| Charting | Indicator Charts | `charting/indicators.py` |
+| Charting | Portfolio Charts | `charting/portfolio.py` |
+| Charting | IDX Theme/Styles | `charting/styles.py` |
+| Caching | Cache Manager | `cache.py` |
+| Caching | CachedDataSource | `data/sources/cached.py` |
+| Errors | Exception Hierarchy | `errors.py` |
+| Errors | Retry & Error Boundary | `errors.py` |
 | CLI | Commands | `cli.py` |
 
 ---
@@ -531,27 +679,29 @@ SAHAM_ID_DATA_SOURCES=itick,yahoo,rti   # fallback chain
 
 ```
 saham-indonesia/
-├── src/saham_id/           # Core library (~29,000 lines)
-│   ├── data/               # Models, sources, universe
+├── src/saham_id/           # Core library (~31,000 lines)
+│   ├── data/               # Models, sources, universe, cached source
 │   ├── analysis/           # 15+ analysis modules
 │   │   └── indicators/     # 12 technical indicators
+│   ├── charting/           # Plotly interactive charts (candlestick, indicators, portfolio)
 │   ├── market/             # Movers, trending, breadth, regime, heatmap
 │   ├── screener/           # 11+ strategy screeners
 │   ├── backtest/           # Engine, metrics, optimizer, report, strategies
 │   ├── portfolio/          # Tracker, optimizer, sizing, rebalancer
 │   ├── indices/            # IHSG, LQ45, IDX30 data
 │   ├── utils/              # Formatting, calendar, logging
+│   ├── cache.py            # Hybrid memory + disk caching
+│   ├── errors.py           # Exception hierarchy, retry, error boundary
 │   ├── signals.py          # Composite signal engine
 │   ├── scorecard.py        # Stock score card
-│   ├── bandarmology → analysis/bandarmology.py
 │   ├── notifications.py    # Telegram/Discord/Webhook
 │   ├── scheduler.py        # Automated scanning
 │   ├── watchlist.py        # Alert system
-│   └── cli.py              # 28+ CLI commands
-├── tests/                  # 467 unit tests
-├── stubs/                  # Offline test stubs
-├── notebooks/              # 5 example notebooks
-├── dashboard/              # Streamlit 5-page app
+│   └── cli.py              # 30+ CLI commands
+├── tests/                  # 573 unit tests
+├── stubs/                  # Offline test stubs (pandas, numpy, plotly, etc.)
+├── notebooks/              # 6 example notebooks
+├── dashboard/              # Streamlit multi-page app
 ├── .github/workflows/      # CI pipeline
 ├── pyproject.toml          # Project config
 ├── Dockerfile              # Docker deployment
@@ -611,6 +761,13 @@ SAHAM_ID_TELEGRAM_TOKEN=your_bot_token
 SAHAM_ID_TELEGRAM_CHAT_ID=your_chat_id
 SAHAM_ID_DISCORD_WEBHOOK=your_webhook_url
 SAHAM_ID_CACHE_DIR=./data/cache
+SAHAM_ID_CACHE_ENABLED=true
+SAHAM_ID_CACHE_MEMORY_MAXSIZE=1024
+SAHAM_ID_CACHE_DEFAULT_TTL=300
+SAHAM_ID_CACHE_DISK_ENABLED=true
+SAHAM_ID_RETRY_MAX_ATTEMPTS=3
+SAHAM_ID_RETRY_MIN_WAIT=1.0
+SAHAM_ID_RETRY_MAX_WAIT=30.0
 SAHAM_ID_LOG_LEVEL=INFO
 ```
 
@@ -629,7 +786,7 @@ SAHAM_ID_LOG_LEVEL=INFO
 
 ## Status
 
-✅ **Production-Ready** — 467 tests passing, semua modul terimplementasi.
+✅ **Production-Ready** — 573 tests passing, semua modul terimplementasi.
 
 ---
 

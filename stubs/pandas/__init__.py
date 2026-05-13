@@ -300,6 +300,60 @@ class Series:
     def copy(self):
         return Series(list(self._data), list(self._index), self.name)
 
+    def where(self, cond, other=0):
+        """Return elements where cond is True, else other."""
+        if isinstance(cond, Series):
+            result = [a if c else other for a, c in zip(self._data, cond._data)]
+        else:
+            result = [a if cond else other for a in self._data]
+        return Series(result, list(self._index), self.name)
+
+    def cumprod(self):
+        """Cumulative product."""
+        result = []
+        prod = 1.0
+        for v in self._data:
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                prod *= v
+            result.append(prod)
+        return Series(result, list(self._index), self.name)
+
+    def resample(self, rule):
+        """Minimal resample stub that returns self with apply method."""
+        return _Resample(self, rule)
+
+    def idxmin(self):
+        """Return index of minimum value."""
+        vals = self._data
+        min_val = None
+        min_idx = self._index[0] if self._index else 0
+        for i, v in enumerate(vals):
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                if min_val is None or v < min_val:
+                    min_val = v
+                    min_idx = self._index[i]
+        return min_idx
+
+    def idxmax(self):
+        """Return index of maximum value."""
+        vals = self._data
+        max_val = None
+        max_idx = self._index[0] if self._index else 0
+        for i, v in enumerate(vals):
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                if max_val is None or v > max_val:
+                    max_val = v
+                    max_idx = self._index[i]
+        return max_idx
+
+    def prod(self):
+        """Product of all values."""
+        vals = [v for v in self._data if v is not None and not (isinstance(v, float) and math.isnan(v))]
+        result = 1.0
+        for v in vals:
+            result *= v
+        return result
+
     def cov(self, other, ddof=0):
         if isinstance(other, Series):
             pairs = [(a, b) for a, b in zip(self._data, other._data)
@@ -310,6 +364,26 @@ class Series:
             mb = sum(b for a, b in pairs) / len(pairs)
             return sum((a - ma) * (b - mb) for a, b in pairs) / (len(pairs) - ddof)
         return 0.0
+
+
+class _Resample:
+    """Minimal resample stub."""
+    def __init__(self, series, rule):
+        self._series = series
+        self._rule = rule
+
+    def apply(self, func):
+        """Apply a function to the resampled data — just applies to whole series as one group."""
+        result_val = func(self._series)
+        if isinstance(result_val, Series):
+            return result_val
+        return Series([result_val], list(self._series._index[:1]), self._series.name)
+
+    def mean(self):
+        return Series([self._series.mean()], list(self._series._index[:1]), self._series.name)
+
+    def sum(self):
+        return Series([self._series.sum()], list(self._series._index[:1]), self._series.name)
 
 
 class _Row:
