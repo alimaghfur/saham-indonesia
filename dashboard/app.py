@@ -119,9 +119,10 @@ with st.sidebar:
         st.rerun()
 
     # Footer
+    st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
     st.markdown(
         """
-        <div style="position:absolute; bottom:16px; left:16px; right:16px; font-size:0.7em; color:#475569;">
+        <div style="font-size:0.7em; color:#475569; padding:12px 0; border-top:1px solid #2a3040;">
             <div>Data: yfinance (delayed 15m)</div>
             <div style="margin-top:4px;">
                 <a href="https://github.com/alimaghfur/saham-indonesia" style="color:#60a5fa; text-decoration:none;">GitHub</a>
