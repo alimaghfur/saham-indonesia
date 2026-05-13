@@ -134,8 +134,7 @@ def _load_watchlist_data() -> dict:
     """Load watchlist."""
     try:
         from saham_id.watchlist import Watchlist
-        wl = Watchlist("default")
-        wl.load()
+        wl = Watchlist.load("default")
         items = list(wl.items.values())
 
         tasks = []
