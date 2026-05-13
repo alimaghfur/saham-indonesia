@@ -101,7 +101,7 @@ st.sidebar.markdown("**IDX Analytics & Screener**")
 
 page = st.sidebar.radio(
     "Navigasi",
-    ["Market Overview", "Real-time", "Heatmap", "Technical Chart", "Compare", "Score Card", "Bandarmology", "Sinyal", "Screener", "Backtest", "Portfolio", "Watchlist & Fee"],
+    ["Investment Advisor", "Market Overview", "Real-time", "Heatmap", "Technical Chart", "Compare", "Score Card", "Bandarmology", "Sinyal", "Screener", "Backtest", "Portfolio", "Watchlist & Fee"],
     index=0,
 )
 
@@ -114,7 +114,10 @@ st.sidebar.markdown(
 )
 
 # --- Route to pages ---
-if page == "Market Overview":
+if page == "Investment Advisor":
+    from dashboard.pages import invest_page
+    invest_page.render()
+elif page == "Market Overview":
     from dashboard.pages import overview
     overview.render()
 elif page == "Real-time":

@@ -1281,6 +1281,160 @@ def compare(
 
 
 # ---------------------------------------------------------------------------
+# Invest command (Investment Decision Engine)
+# ---------------------------------------------------------------------------
+invest_app = typer.Typer(help="Investment analysis & decision engine.", no_args_is_help=True)
+app.add_typer(invest_app, name="invest")
+
+
+@invest_app.command("analyze")
+def cmd_invest_analyze(
+    ticker: str = typer.Argument(..., help="IDX ticker to analyze, e.g. BBCA"),
+    budget: float = typer.Option(50_000_000, "--budget", "-b", help="Available capital (Rp)"),
+    risk: float = typer.Option(2.0, "--risk", "-r", help="Max risk per trade (%)"),
+    period: str = typer.Option("6mo", "--period", "-p", help="Analysis period"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Full investment analysis with entry/exit recommendation.
+
+    Combines trend, momentum, bandar, asing, volume, support/resistance
+    into a single actionable verdict: STRONG BUY / BUY / WAIT / AVOID.
+
+    Examples:
+        saham invest analyze BBCA
+        saham invest analyze BBRI --budget 100000000 --risk 1.5
+    """
+    from saham_id.invest import analyze_investment, Verdict
+
+    src = get_source(source)
+
+    with console.status(f"Analyzing {ticker} for investment decision..."):
+        decision = analyze_investment(
+            ticker=ticker,
+            budget=budget,
+            risk_tolerance=risk / 100,
+            period=period,
+            source=src,
+        )
+
+    # --- Verdict ---
+    verdict_color = {
+        "STRONG BUY": "green", "BUY": "green",
+        "WAIT": "yellow", "AVOID": "red", "SELL": "red",
+    }
+    vc = verdict_color.get(decision.verdict.value, "white")
+    console.print(f"\n[bold {vc}]{'=' * 50}[/]")
+    console.print(f"[bold {vc}]  {decision.verdict.value}  —  {ticker}[/]")
+    console.print(f"[bold {vc}]{'=' * 50}[/]")
+    console.print(f"\n  {decision.summary}\n")
+
+    # --- Score Table ---
+    table = Table(title="Component Scores")
+    table.add_column("Component", style="cyan")
+    table.add_column("Score", justify="right")
+    table.add_column("Status")
+    components = [
+        ("Trend", decision.trend_score),
+        ("Momentum", decision.momentum_score),
+        ("Volume", decision.volume_score),
+        ("Bandar", decision.bandar_score),
+        ("Foreign Flow", decision.foreign_flow_score),
+        ("Support/Resistance", decision.support_resistance_score),
+    ]
+    for name, score in components:
+        status_color = "green" if score >= 65 else "yellow" if score >= 45 else "red"
+        status = "BULLISH" if score >= 65 else "NEUTRAL" if score >= 45 else "BEARISH"
+        table.add_row(name, f"{score:.0f}/100", f"[{status_color}]{status}[/]")
+    table.add_row("─" * 20, "─" * 8, "─" * 10)
+    table.add_row("[bold]ENTRY SCORE[/]", f"[bold]{decision.entry_score:.0f}/100[/]", f"[bold]Conviction: {decision.conviction.value}[/]")
+    console.print(table)
+
+    # --- Risk/Reward ---
+    rr = decision.risk_reward
+    console.print(f"\n[bold]Risk / Reward:[/]")
+    console.print(f"  Entry:     Rp {rr.entry_price:,.0f}")
+    console.print(f"  Stop-Loss: Rp {rr.stop_loss:,.0f} [dim](-{rr.risk_pct:.1f}%)[/]")
+    console.print(f"  Target 1:  Rp {rr.target_1:,.0f}")
+    console.print(f"  Target 2:  Rp {rr.target_2:,.0f} [dim](+{rr.reward_pct:.1f}%)[/]")
+    console.print(f"  Target 3:  Rp {rr.target_3:,.0f}")
+    rr_color = "green" if rr.is_favorable else "red"
+    console.print(f"  R:R Ratio: [{rr_color}]{rr.risk_reward_ratio:.1f}:1[/] {'(FAVORABLE)' if rr.is_favorable else '(kurang ideal)'}")
+
+    # --- Position Sizing ---
+    pos = decision.position
+    if pos.lots > 0:
+        console.print(f"\n[bold]Position Size:[/]")
+        console.print(f"  Beli: {pos.lots} lot ({pos.shares:,} lembar)")
+        console.print(f"  Modal: Rp {pos.capital_required:,.0f} ({pos.pct_of_portfolio:.1f}% portfolio)")
+        console.print(f"  Max Loss: Rp {pos.max_loss:,.0f} ({pos.risk_per_trade:.1f}% risk)")
+
+    # --- Exit Plan ---
+    console.print(f"\n[bold]Exit Plan:[/]")
+    for cond in decision.exit_plan.exit_conditions:
+        console.print(f"  - {cond}")
+
+    # --- Reasons ---
+    if decision.bullish_reasons:
+        console.print(f"\n[green][bold]Bullish:[/][/]")
+        for r in decision.bullish_reasons:
+            console.print(f"  [green]+ {r}[/]")
+    if decision.bearish_reasons:
+        console.print(f"\n[red][bold]Bearish:[/][/]")
+        for r in decision.bearish_reasons:
+            console.print(f"  [red]- {r}[/]")
+    if decision.warnings:
+        console.print(f"\n[yellow][bold]Warnings:[/][/]")
+        for w in decision.warnings:
+            console.print(f"  [yellow]! {w}[/]")
+
+    console.print()
+
+
+@invest_app.command("quick")
+def cmd_invest_quick(
+    tickers: str = typer.Argument(..., help="Tickers to scan (comma-separated)"),
+    budget: float = typer.Option(50_000_000, "--budget", "-b"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Quick scan multiple tickers — show verdict summary table.
+
+    Examples:
+        saham invest quick BBCA,BBRI,TLKM,ASII,BMRI
+    """
+    from saham_id.invest import analyze_investment
+
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    src = get_source(source)
+
+    table = Table(title="Investment Quick Scan")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Verdict")
+    table.add_column("Score", justify="right")
+    table.add_column("R:R", justify="right")
+    table.add_column("Conviction")
+    table.add_column("Action")
+
+    with console.status(f"Scanning {len(ticker_list)} tickers..."):
+        for ticker in ticker_list:
+            try:
+                d = analyze_investment(ticker, budget=budget, source=src)
+                v_color = "green" if d.should_buy else "yellow" if d.verdict.value == "WAIT" else "red"
+                action = f"Beli {d.position.lots} lot" if d.should_buy else "—"
+                table.add_row(
+                    ticker,
+                    f"[{v_color}]{d.verdict.value}[/]",
+                    f"{d.entry_score:.0f}",
+                    f"{d.risk_reward.risk_reward_ratio:.1f}:1",
+                    d.conviction.value,
+                    action,
+                )
+            except Exception as exc:
+                table.add_row(ticker, "[red]ERROR[/]", "—", "—", "—", str(exc)[:30])
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
 def _print_movers(movers: list, title: str) -> None:

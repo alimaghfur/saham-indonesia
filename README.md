@@ -183,6 +183,18 @@
 | State Persistence | Track last_run across restarts |
 | Daemon Mode | `scheduler.run_forever()` for standalone service |
 
+### 🧠 Investment Decision Engine
+| Fitur | Deskripsi |
+|-------|-----------|
+| Entry Score | Multi-factor 0-100 (trend + momentum + bandar + asing + volume + S/R) |
+| Risk:Reward | Auto-calculate entry, stop-loss, target — hanya rekomendasikan jika >= 2:1 |
+| Market Regime | Filter: jangan beli saat bearish / high volatility |
+| Conviction Level | HIGH / MEDIUM / LOW — pengaruhi ukuran posisi |
+| Position Sizing | Otomatis hitung lot berdasarkan budget + risk tolerance |
+| Exit Plan | Stop-loss, trailing stop, 3 target levels, time stop |
+| Verdict | STRONG BUY / BUY / WAIT / AVOID — keputusan final |
+| CLI | `saham invest analyze BBCA` / `saham invest quick BBCA,BBRI,TLKM` |
+
 ---
 
 ## Instalasi
@@ -292,6 +304,11 @@ saham screen unusual                   # Unusual activity
 saham signals --universe IDX30         # Generate BUY/SELL signals
 saham mtf BBCA                         # Multi-timeframe analysis
 saham position-size --entry 9500 --stop 9000  # Position sizing
+
+# === INVESTMENT ADVISOR ===
+saham invest analyze BBCA              # Full investment decision analysis
+saham invest analyze BBRI --budget 100000000 --risk 1.5
+saham invest quick BBCA,BBRI,TLKM,ASII # Quick scan multiple tickers
 
 # === CHARTING ===
 saham chart BBCA                       # Interactive candlestick chart
@@ -694,6 +711,54 @@ for r in results:
 #   */5  * * * 1-5 saham schedule run --action check_alerts --notify
 ```
 
+### Investment Decision Engine
+
+```python
+from saham_id.invest import analyze_investment, Verdict, Conviction
+
+# Full investment analysis — should I buy this stock?
+decision = analyze_investment("BBCA", budget=50_000_000, risk_tolerance=0.02)
+
+# Verdict: STRONG BUY / BUY / WAIT / AVOID
+print(decision.verdict.value)        # "BUY"
+print(decision.entry_score)          # 72.5 (0-100)
+print(decision.conviction.value)     # "MEDIUM"
+print(decision.market_regime.value)  # "BULLISH"
+
+# Risk/Reward analysis
+rr = decision.risk_reward
+print(f"Entry: Rp {rr.entry_price:,.0f}")
+print(f"Stop-Loss: Rp {rr.stop_loss:,.0f} (-{rr.risk_pct:.1f}%)")
+print(f"Target: Rp {rr.target_2:,.0f} (+{rr.reward_pct:.1f}%)")
+print(f"R:R Ratio: {rr.risk_reward_ratio:.1f}:1")
+print(f"Favorable: {rr.is_favorable}")  # True if >= 2:1
+
+# Position sizing (auto-calculated based on conviction + risk)
+pos = decision.position
+print(f"Buy: {pos.lots} lot ({pos.shares} shares)")
+print(f"Capital: Rp {pos.capital_required:,.0f}")
+print(f"Max Loss: Rp {pos.max_loss:,.0f}")
+
+# Exit plan
+for rule in decision.exit_plan.exit_conditions:
+    print(f"  - {rule}")
+
+# Component scores (0-100 each)
+print(f"Trend: {decision.trend_score:.0f}")
+print(f"Momentum: {decision.momentum_score:.0f}")
+print(f"Bandar: {decision.bandar_score:.0f}")
+print(f"Asing: {decision.foreign_flow_score:.0f}")
+print(f"Volume: {decision.volume_score:.0f}")
+
+# Reasons
+for r in decision.bullish_reasons:
+    print(f"  + {r}")
+for r in decision.bearish_reasons:
+    print(f"  - {r}")
+for w in decision.warnings:
+    print(f"  ! {w}")
+```
+
 ---
 
 ## Dashboard Streamlit
@@ -705,9 +770,10 @@ streamlit run dashboard/app.py
 ```
 
 ### Halaman Dashboard:
-1. **Market Overview** — Breadth, top movers, trending, unusual activity
-2. **Real-time** — Live price polling with auto-refresh
-3. **Heatmap** — Sector performance grid with color coding
+1. **Investment Advisor** — Full analysis sebelum keputusan beli (score, R:R, exit plan)
+2. **Market Overview** — Breadth, top movers, trending, unusual activity
+3. **Real-time** — Live price polling with auto-refresh
+4. **Heatmap** — Sector performance grid with color coding
 4. **Technical Chart** — Full interactive candlestick + indicators
 5. **Compare** — Head-to-head stock comparison (rebased to 100)
 6. **Score Card** — Single-stock complete analysis
@@ -804,6 +870,7 @@ streamlit run dashboard/app.py
 | Errors | Retry & Error Boundary | `errors.py` |
 | Scheduler | Task Runner | `scheduler.py` |
 | Paper Trading | Simulation Engine | `paper_trading.py` |
+| Investment | Decision Engine | `invest.py` |
 | CLI | Commands (35+) | `cli.py` |
 
 ---
