@@ -1,7 +1,7 @@
 """Project Dashboard — Modern dark-themed overview page.
 
-Properly styled for Streamlit dark mode with card-based layout.
-Inspired by Panze Studio project management dashboard design.
+All HTML rendered as single complete blocks per st.markdown() call
+to prevent Streamlit from displaying raw HTML tags.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 def render() -> None:
     """Render the modern Project Dashboard."""
 
-    # --- Inject CSS for dark theme cards ---
+    # --- Inject CSS ---
     st.markdown(_get_css(), unsafe_allow_html=True)
 
     # --- Header ---
@@ -42,8 +42,7 @@ def render() -> None:
 
     st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
 
-    # === MAIN LAYOUT ===
-    # Row 1: My Tasks | Portfolio Overview | Profit VS Loss | My Alerts
+    # === ROW 1 ===
     r1c1, r1c2, r1c3, r1c4 = st.columns([1.3, 1.2, 1.5, 1.2])
 
     with r1c1:
@@ -60,7 +59,7 @@ def render() -> None:
 
     st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
 
-    # Row 2: Stock Performance | Open Tickets
+    # === ROW 2 ===
     r2c1, r2c2 = st.columns([2.8, 1.2])
 
     with r2c1:
@@ -73,17 +72,6 @@ def render() -> None:
 # ─── CARD: MY TASKS ──────────────────────────────────────────────────────────
 
 def _card_my_tasks() -> None:
-    st.markdown(
-        """
-        <div class="ds-card">
-            <div class="ds-card-head">
-                <span class="ds-card-title">My Tasks</span>
-                <span class="ds-card-btn">+</span>
-            </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     tasks = [
         ("📈", "BBCA — Review Entry", "Score 78/100, R:R 2.5:1"),
         ("🔍", "TLKM — Monitor Support", "Mendekati support Rp 3,450"),
@@ -92,22 +80,26 @@ def _card_my_tasks() -> None:
         ("📊", "UNVR — Rebalance", "Alokasi > 25% portfolio"),
     ]
 
-    rows_html = ""
+    rows = ""
     for icon, title, desc in tasks:
-        rows_html += f"""
-            <div class="ds-task-row">
-                <span class="ds-task-icon">{icon}</span>
-                <div class="ds-task-text">
-                    <div class="ds-task-title">{title}</div>
-                    <div class="ds-task-desc">{desc}</div>
-                </div>
-                <span class="ds-task-check">&#10003;</span>
+        rows += f"""
+        <div class="ds-task-row">
+            <span class="ds-task-icon">{icon}</span>
+            <div class="ds-task-text">
+                <div class="ds-task-title">{title}</div>
+                <div class="ds-task-desc">{desc}</div>
             </div>
-        """
+            <span class="ds-task-check">&#10003;</span>
+        </div>"""
 
     st.markdown(
         f"""
-            {rows_html}
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">My Tasks</span>
+                <span class="ds-card-btn">+</span>
+            </div>
+            {rows}
             <div class="ds-task-footer">
                 <span class="ds-badge">{len(tasks)}</span> On Going Tasks
             </div>
@@ -152,7 +144,7 @@ def _card_portfolio_overview() -> None:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         annotations=[dict(
-            text=f"<b style='color:white'>{sum(values)}</b><br><span style='color:#aaa;font-size:11px'>Stocks</span>",
+            text=f"<b>{sum(values)}</b><br><span style='font-size:11px'>Stocks</span>",
             x=0.5, y=0.5,
             font_size=20,
             showarrow=False,
@@ -244,42 +236,35 @@ def _card_profit_vs_loss() -> None:
 # ─── CARD: MY ALERTS ─────────────────────────────────────────────────────────
 
 def _card_my_alerts() -> None:
-    st.markdown(
-        """
-        <div class="ds-card">
-            <div class="ds-card-head">
-                <span class="ds-card-title">My Alerts</span>
-                <span class="ds-card-btn">&#128197;</span>
-            </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     alerts = [
         ("BBCA Breakout", "09:15", "📈 Signal"),
         ("TLKM Support Hit", "10:30", "🔔 Alert"),
         ("Portfolio Review", "14:00", "📋 Task"),
     ]
 
-    alerts_html = ""
+    rows = ""
     for title, time, atype in alerts:
-        alerts_html += f"""
-            <div class="ds-alert-row">
-                <div>
-                    <div class="ds-alert-label">My Alerts</div>
-                    <div class="ds-alert-title">{title}</div>
-                </div>
-                <div style="text-align:right">
-                    <div class="ds-alert-time">{time}</div>
-                    <div class="ds-alert-type">{atype}</div>
-                </div>
-                <span class="ds-alert-arrow">&#8599;</span>
+        rows += f"""
+        <div class="ds-alert-row">
+            <div>
+                <div class="ds-alert-label">My Alerts</div>
+                <div class="ds-alert-title">{title}</div>
             </div>
-        """
+            <div style="text-align:right">
+                <div class="ds-alert-time">{time}</div>
+                <div class="ds-alert-type">{atype}</div>
+            </div>
+            <span class="ds-alert-arrow">&#8599;</span>
+        </div>"""
 
     st.markdown(
         f"""
-            {alerts_html}
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">My Alerts</span>
+                <span class="ds-card-btn">&#128197;</span>
+            </div>
+            {rows}
             <div class="ds-see-all">See All Alerts &gt;</div>
         </div>
         """,
@@ -290,17 +275,6 @@ def _card_my_alerts() -> None:
 # ─── CARD: STOCK PERFORMANCE ─────────────────────────────────────────────────
 
 def _card_stock_performance() -> None:
-    st.markdown(
-        """
-        <div class="ds-card">
-            <div class="ds-card-head">
-                <span class="ds-card-title">Stock Performance</span>
-                <span class="ds-card-btn">&#9881;</span>
-            </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     stocks = [
         ("Strong Buy", 5, "Rp 183.000.000", 90, "#4CAF50"),
         ("Buy", 8, "Rp 245.000.000", 75, "#8BC34A"),
@@ -309,57 +283,66 @@ def _card_stock_performance() -> None:
         ("Avoid", 3, "Rp 45.000.000", 15, "#f44336"),
     ]
 
-    rows_html = ""
+    rows = ""
     for name, count, value, pct, color in stocks:
-        rows_html += f"""
-            <div class="ds-perf-row">
-                <div class="ds-perf-name">{name}</div>
-                <div class="ds-perf-count">{count}</div>
-                <div class="ds-perf-sep">|</div>
-                <div class="ds-perf-val">{value}</div>
-                <div class="ds-perf-bar-bg">
-                    <div class="ds-perf-bar" style="width:{pct}%; background:{color}"></div>
-                </div>
+        rows += f"""
+        <div class="ds-perf-row">
+            <div class="ds-perf-name">{name}</div>
+            <div class="ds-perf-count">{count}</div>
+            <div class="ds-perf-sep">|</div>
+            <div class="ds-perf-val">{value}</div>
+            <div class="ds-perf-bar-bg">
+                <div class="ds-perf-bar" style="width:{pct}%; background:{color}"></div>
             </div>
-        """
+        </div>"""
 
-    st.markdown(f"{rows_html}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">Stock Performance</span>
+                <span class="ds-card-btn">&#9881;</span>
+            </div>
+            {rows}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ─── CARD: OPEN TICKETS ──────────────────────────────────────────────────────
 
 def _card_open_tickets() -> None:
-    st.markdown(
-        """
-        <div class="ds-card">
-            <div class="ds-card-head">
-                <span class="ds-card-title">Open Tickets</span>
-                <span class="ds-card-btn">&#9881;</span>
-            </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     tickets = [
         ("🏦", "BBCA", "Entry score 78, mendekati buy zone. Review segera."),
         ("📡", "TLKM", "Sudah 3 hari di support. Perlu konfirmasi volume."),
         ("🚗", "ASII", "Breakdown MA50, pertimbangkan cut loss."),
     ]
 
-    tickets_html = ""
+    rows = ""
     for avatar, name, msg in tickets:
-        tickets_html += f"""
-            <div class="ds-ticket-row">
-                <span class="ds-ticket-avatar">{avatar}</span>
-                <div class="ds-ticket-body">
-                    <div class="ds-ticket-name">{name}</div>
-                    <div class="ds-ticket-msg">{msg}</div>
-                </div>
-                <span class="ds-ticket-action">Check &gt;</span>
+        rows += f"""
+        <div class="ds-ticket-row">
+            <span class="ds-ticket-avatar">{avatar}</span>
+            <div class="ds-ticket-body">
+                <div class="ds-ticket-name">{name}</div>
+                <div class="ds-ticket-msg">{msg}</div>
             </div>
-        """
+            <span class="ds-ticket-action">Check &gt;</span>
+        </div>"""
 
-    st.markdown(f"{tickets_html}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">Open Tickets</span>
+                <span class="ds-card-btn">&#9881;</span>
+            </div>
+            {rows}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
