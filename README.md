@@ -138,10 +138,12 @@
 | Candlestick + OHLC | Interactive charts with MA overlay, volume bars |
 | Indicator Panels | RSI, MACD, Bollinger, Stochastic, ATR — single & multi-panel |
 | Support/Resistance | Auto pivot-based S/R horizontal lines |
+| **Comparison Chart** | Relative performance overlay 2-5 saham (rebased to 100) |
+| **Drawdown Comparison** | Compare drawdown profiles side-by-side |
 | Portfolio Charts | Equity curve, drawdown, allocation pie, monthly returns |
 | IDX Theme | Dark/light theme optimized untuk saham Indonesia |
 | Export | HTML interaktif, PNG static |
-| CLI | `saham chart BBCA --indicators rsi,macd --export chart.html` |
+| CLI | `saham chart`, `saham compare`, `saham report` |
 
 ### ⚡ Caching & Performance
 | Fitur | Deskripsi |
@@ -161,6 +163,25 @@
 | Error Boundary | Context manager untuk graceful degradation |
 | ErrorCollector | Batch operations — collect errors tanpa stop execution |
 | Structured Errors | `.to_dict()` serialization untuk logging/API |
+
+### 🕹️ Paper Trading
+| Fitur | Deskripsi |
+|-------|-----------|
+| Buy/Sell at Market | Execute virtual trades at live market prices |
+| Commission Sim | Realistic 0.15% fee per transaction |
+| Position Tracking | Average cost, realized P/L per position |
+| Portfolio Value | Real-time portfolio valuation |
+| Session Save/Load | Persist sessions to JSON, resume later |
+| CLI | `saham paper buy/sell/portfolio/history/reset` |
+
+### 🤖 Auto-Scheduler
+| Fitur | Deskripsi |
+|-------|-----------|
+| Cron Integration | `saham schedule run` for cron/systemd |
+| 9 Actions | check_alerts, screen_*, generate_signals, market_breadth |
+| Auto-Notify | Send Telegram/Discord on results |
+| State Persistence | Track last_run across restarts |
+| Daemon Mode | `scheduler.run_forever()` for standalone service |
 
 ---
 
@@ -279,6 +300,27 @@ saham chart BBCA --ma 20,50,200        # Custom moving averages
 saham chart BBCA --type ohlc --light   # OHLC, light theme
 saham chart BBCA --export chart.html   # Export to HTML file
 saham chart BBCA -I bollinger -p 1y    # Bollinger Bands, 1 year
+
+# === COMPARE ===
+saham compare BBCA,BBRI,BMRI           # Relative performance (rebased to 100)
+saham compare BBCA,TLKM --period 1y    # 1 year comparison
+saham compare BBCA,BBRI -o compare.html  # Export comparison chart
+
+# === REPORT ===
+saham report BBCA                      # Generate full HTML report
+saham report BBCA --period 1y -o rep.html  # Custom period + output
+
+# === PAPER TRADING ===
+saham paper buy BBCA --lots 10         # Buy 10 lots at market price
+saham paper sell BBCA --lots 5         # Sell 5 lots
+saham paper portfolio                  # Show positions & P/L
+saham paper history --tail 20          # Trade history
+saham paper reset --capital 100000000 --yes  # Reset session
+
+# === SCHEDULER ===
+saham schedule run --action check_alerts   # Run action once (for cron)
+saham schedule run --action screen_bpjs --universe LQ45
+saham schedule list                    # Show available actions
 
 # === CACHE ===
 saham cache stats                      # Show cache memory/disk usage
@@ -548,6 +590,110 @@ except DataNotFoundError as e:
     # {"error": "DataNotFoundError", "message": "...", "details": {"ticker": "ZZZZ"}, ...}
 ```
 
+### Stock Comparison
+
+```python
+from saham_id.analysis.comparison import compare_stocks
+from saham_id.charting.comparison import comparison_chart, drawdown_comparison
+from saham_id.data import get_source
+
+# Head-to-head comparison
+result = compare_stocks(["BBCA", "BBRI", "BMRI"], period="1y")
+print(result.winner)  # Best performer by return
+print(result.to_dataframe())  # Side-by-side metrics table
+
+# Comparison chart (rebased to 100)
+src = get_source()
+dfs = {t: src.get_ohlc(t, period="6mo") for t in ["BBCA", "BBRI", "BMRI"]}
+fig = comparison_chart(dfs, title="Bank Comparison")
+fig.write_html("compare_banks.html")
+
+# Drawdown comparison
+fig_dd = drawdown_comparison(dfs)
+fig_dd.write_html("drawdown_banks.html")
+```
+
+### HTML Report Generation
+
+```python
+# Via CLI (recommended):
+#   saham report BBCA --period 6mo --output report_bbca.html
+#
+# Generates: price chart + MA overlay + RSI/MACD/Volume indicators
+# + metrics summary, all in one interactive HTML file.
+
+# Via Python:
+from saham_id.charting.candlestick import candlestick_chart
+from saham_id.charting.indicators import multi_indicator_chart
+from saham_id.data import get_source
+
+src = get_source()
+df = src.get_ohlc("BBCA", period="6mo")
+fig_price = candlestick_chart(df, ticker="BBCA", ma_periods=[20, 50, 200])
+fig_ind = multi_indicator_chart(df, indicators=["rsi", "macd", "volume"], ticker="BBCA")
+
+# Combine into single HTML (see `saham report` command for full template)
+```
+
+### Paper Trading
+
+```python
+from saham_id.paper_trading import PaperTrader
+
+# Start a new session with Rp 100M capital
+trader = PaperTrader(initial_capital=100_000_000)
+
+# Buy & sell at current market prices
+order = trader.buy("BBCA", lots=10)  # 10 lots = 1000 shares
+print(f"Bought @ Rp {order.price:,.0f}, status: {order.status}")
+
+order = trader.sell("BBCA", lots=5)
+print(f"Sold @ Rp {order.price:,.0f}")
+
+# Check portfolio
+print(f"Cash: Rp {trader.cash:,.0f}")
+print(f"Portfolio Value: Rp {trader.portfolio_value():,.0f}")
+print(f"Total P/L: Rp {trader.total_pnl():,.0f} ({trader.total_return_pct():.2%})")
+print(f"Trades: {len(trader.trades)}")
+
+# Save / load sessions
+trader.save("my_session")
+trader2 = PaperTrader.load("my_session")
+```
+
+### Scheduler (Automated Scanning)
+
+```python
+from saham_id.scheduler import Scheduler, ScheduledTask
+
+# Create scheduler with tasks
+scheduler = Scheduler()
+scheduler.add_task(ScheduledTask(
+    name="morning_scan",
+    interval_minutes=30,
+    action="screen_bpjs",
+    params={"universe": "LQ45"},
+))
+scheduler.add_task(ScheduledTask(
+    name="alert_check",
+    interval_minutes=5,
+    action="check_alerts",
+    params={"watchlist": "default"},
+))
+
+# Run due tasks once (for cron integration)
+results = scheduler.run_due_tasks()
+for r in results:
+    print(f"{r.task_name}: {'OK' if r.success else 'FAIL'} — {r.message}")
+
+# Or run forever as daemon
+# scheduler.run_forever()
+
+# CLI usage (for cron):
+#   */30 * * * 1-5 saham schedule run --action screen_bpjs --universe LQ45 --notify
+#   */5  * * * 1-5 saham schedule run --action check_alerts --notify
+```
+
 ---
 
 ## Dashboard Streamlit
@@ -560,10 +706,17 @@ streamlit run dashboard/app.py
 
 ### Halaman Dashboard:
 1. **Market Overview** — Breadth, top movers, trending, unusual activity
-2. **Sinyal** — Generate BUY/SELL signals + detail per saham
-3. **Screener** — 6 strategies interaktif
-4. **Backtest** — Run strategies + equity curve + trade log
-5. **Portfolio** — Transaction recording, P/L, allocation
+2. **Real-time** — Live price polling with auto-refresh
+3. **Heatmap** — Sector performance grid with color coding
+4. **Technical Chart** — Full interactive candlestick + indicators
+5. **Compare** — Head-to-head stock comparison (rebased to 100)
+6. **Score Card** — Single-stock complete analysis
+7. **Bandarmology** — Bandar phase detection & money flow
+8. **Sinyal** — Generate BUY/SELL signals + detail per saham
+9. **Screener** — 6 strategies interaktif
+10. **Backtest** — Run strategies + equity curve + trade log
+11. **Portfolio** — Transaction recording, P/L, allocation
+12. **Watchlist & Fee** — Watchlist alerts + broker fee calculator
 
 ---
 
@@ -642,13 +795,16 @@ streamlit run dashboard/app.py
 | Utils | Logging | `utils/logging.py` |
 | Charting | Candlestick/OHLC | `charting/candlestick.py` |
 | Charting | Indicator Charts | `charting/indicators.py` |
+| Charting | Comparison Charts | `charting/comparison.py` |
 | Charting | Portfolio Charts | `charting/portfolio.py` |
 | Charting | IDX Theme/Styles | `charting/styles.py` |
 | Caching | Cache Manager | `cache.py` |
 | Caching | CachedDataSource | `data/sources/cached.py` |
 | Errors | Exception Hierarchy | `errors.py` |
 | Errors | Retry & Error Boundary | `errors.py` |
-| CLI | Commands | `cli.py` |
+| Scheduler | Task Runner | `scheduler.py` |
+| Paper Trading | Simulation Engine | `paper_trading.py` |
+| CLI | Commands (35+) | `cli.py` |
 
 ---
 
@@ -679,11 +835,11 @@ SAHAM_ID_DATA_SOURCES=itick,yahoo,rti   # fallback chain
 
 ```
 saham-indonesia/
-├── src/saham_id/           # Core library (~31,000 lines)
+├── src/saham_id/           # Core library (~33,000 lines)
 │   ├── data/               # Models, sources, universe, cached source
 │   ├── analysis/           # 15+ analysis modules
 │   │   └── indicators/     # 12 technical indicators
-│   ├── charting/           # Plotly interactive charts (candlestick, indicators, portfolio)
+│   ├── charting/           # Plotly charts (candlestick, indicators, comparison, portfolio)
 │   ├── market/             # Movers, trending, breadth, regime, heatmap
 │   ├── screener/           # 11+ strategy screeners
 │   ├── backtest/           # Engine, metrics, optimizer, report, strategies
@@ -694,14 +850,15 @@ saham-indonesia/
 │   ├── errors.py           # Exception hierarchy, retry, error boundary
 │   ├── signals.py          # Composite signal engine
 │   ├── scorecard.py        # Stock score card
+│   ├── paper_trading.py    # Paper trading simulation
+│   ├── scheduler.py        # Automated task scheduling
 │   ├── notifications.py    # Telegram/Discord/Webhook
-│   ├── scheduler.py        # Automated scanning
 │   ├── watchlist.py        # Alert system
-│   └── cli.py              # 30+ CLI commands
+│   └── cli.py              # 35+ CLI commands
 ├── tests/                  # 573 unit tests
 ├── stubs/                  # Offline test stubs (pandas, numpy, plotly, etc.)
-├── notebooks/              # 6 example notebooks
-├── dashboard/              # Streamlit multi-page app
+├── notebooks/              # 7 example notebooks
+├── dashboard/              # Streamlit 12-page app
 ├── .github/workflows/      # CI pipeline
 ├── pyproject.toml          # Project config
 ├── Dockerfile              # Docker deployment
