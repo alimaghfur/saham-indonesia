@@ -29,7 +29,8 @@ def inject_global_css() -> str:
     border: none;
     border-radius: 6px;
     color: #94a3b8;
-    text-align: left;
+    text-align: left !important;
+    justify-content: flex-start !important;
     padding: 8px 12px;
     font-size: 0.85em;
     font-weight: 400;
