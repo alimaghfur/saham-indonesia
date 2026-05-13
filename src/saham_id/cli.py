@@ -38,9 +38,11 @@ console = Console()
 movers_app = typer.Typer(help="Top gainers / losers / most active.", no_args_is_help=True)
 screen_app = typer.Typer(help="Strategy screeners.", no_args_is_help=True)
 cache_app = typer.Typer(help="Cache management commands.", no_args_is_help=True)
+alert_app = typer.Typer(help="Price alerts & Telegram notifications.", no_args_is_help=True)
 app.add_typer(movers_app, name="movers")
 app.add_typer(screen_app, name="screen")
 app.add_typer(cache_app, name="cache")
+app.add_typer(alert_app, name="alert")
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +475,102 @@ def cmd_position_size(
 
 
 # ---------------------------------------------------------------------------
+# Backtest optimize command
+# ---------------------------------------------------------------------------
+@app.command("backtest-optimize")
+def cmd_backtest_optimize(
+    ticker: str = typer.Argument(..., help="IDX ticker to optimize on"),
+    strategy: str = typer.Option(
+        "rsi", "--strategy", "-S",
+        help="Strategy to optimize: rsi, ma_crossover",
+    ),
+    metric: str = typer.Option(
+        "sharpe", "--metric", "-m",
+        help="Metric to maximize: sharpe, sortino, total_return, win_rate, profit_factor",
+    ),
+    period: str = typer.Option("2y", "--period", "-p", help="Data period for backtest"),
+    top: int = typer.Option(5, "--top", "-n", help="Show top N parameter sets"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Optimize strategy parameters via grid search.
+
+    Runs all parameter combinations and ranks by chosen metric.
+
+    Examples:
+        saham backtest-optimize BBCA --strategy rsi --metric sharpe
+        saham backtest-optimize BBRI --strategy ma_crossover --metric total_return --period 3y
+    """
+    from saham_id.backtest.optimizer import optimize_rsi_strategy, optimize_ma_crossover
+
+    src = get_source(source)
+
+    with console.status(f"Fetching {ticker} data ({period})..."):
+        df = src.get_ohlc(ticker, period=period, interval="1d")  # type: ignore[arg-type]
+
+    if df.empty:
+        console.print(f"[red]No data for {ticker}[/]")
+        raise typer.Exit(1)
+
+    console.print(f"[dim]Data: {len(df)} bars, optimizing {strategy} by {metric}...[/]")
+
+    with console.status("Running grid search optimization..."):
+        if strategy == "rsi":
+            result = optimize_rsi_strategy(df, metric=metric, ticker=ticker)
+        elif strategy in ("ma_crossover", "ma"):
+            result = optimize_ma_crossover(df, metric=metric, ticker=ticker)
+        else:
+            console.print(f"[red]Unknown strategy: {strategy}. Use: rsi, ma_crossover[/]")
+            raise typer.Exit(1)
+
+    # Summary
+    console.print(f"\n[bold]{ticker}[/] — Strategy: {strategy}, Metric: {metric}")
+    console.print(
+        f"  Runs: {result.total_runs} total, {result.successful_runs} successful\n"
+    )
+
+    if result.best_run:
+        console.print(f"  [green]Best {metric}: {result.best_score:.4f}[/]")
+        console.print(f"  Best params: {result.best_params}")
+        if result.best_metrics:
+            bm = result.best_metrics
+            console.print(
+                f"  Return: {bm.total_return:.2%} | Sharpe: {bm.sharpe:.2f} | "
+                f"MaxDD: {bm.max_drawdown:.2%} | Trades: {bm.num_trades} | "
+                f"Win: {bm.win_rate:.0%}"
+            )
+    else:
+        console.print("[yellow]No successful runs (all parameter sets failed or too few trades).[/]")
+        return
+
+    # Top N table
+    console.print()
+    top_runs = result.top_n(top)
+    table = Table(title=f"Top {top} Parameter Sets")
+    # Dynamic columns from param keys
+    param_keys = list(result.best_params.keys())
+    for key in param_keys:
+        table.add_column(key, justify="right", style="cyan")
+    table.add_column(metric, justify="right", style="green")
+    table.add_column("Return", justify="right")
+    table.add_column("Sharpe", justify="right")
+    table.add_column("MaxDD", justify="right")
+    table.add_column("Trades", justify="right")
+
+    for run in top_runs:
+        if run.metrics is None:
+            continue
+        row = [str(run.params.get(k, "")) for k in param_keys]
+        row.append(f"{run.score:.4f}")
+        row.append(f"{run.metrics.total_return:.2%}")
+        row.append(f"{run.metrics.sharpe:.2f}")
+        row.append(f"{run.metrics.max_drawdown:.2%}")
+        row.append(str(run.metrics.num_trades))
+        table.add_row(*row)
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Cache sub-app
 # ---------------------------------------------------------------------------
 @cache_app.command("stats")
@@ -522,6 +620,207 @@ def _human_bytes(n: int) -> str:
             return f"{n:.1f} {unit}"
         n /= 1024  # type: ignore
     return f"{n:.1f} TB"
+
+
+# ---------------------------------------------------------------------------
+# Alert sub-app
+# ---------------------------------------------------------------------------
+@alert_app.command("setup")
+def cmd_alert_setup(
+    telegram_token: Optional[str] = typer.Option(None, "--token", "-t", help="Telegram Bot token"),
+    chat_id: Optional[str] = typer.Option(None, "--chat-id", "-c", help="Telegram chat ID"),
+) -> None:
+    """Setup or verify Telegram notification credentials.
+
+    If --token and --chat-id provided, tests the connection.
+    Otherwise shows current configuration status.
+    """
+    from saham_id.config import settings as _settings
+
+    if telegram_token and chat_id:
+        # Test the connection
+        from saham_id.notifications import TelegramBackend, Notification
+
+        backend = TelegramBackend(bot_token=telegram_token, chat_id=chat_id)
+        test_notif = Notification(
+            title="Setup Test",
+            message="saham-indonesia alert berhasil terkoneksi!",
+            level="info",
+        )
+
+        with console.status("Testing Telegram connection..."):
+            success = backend.send(test_notif)
+
+        if success:
+            console.print("[green]Telegram connected successfully![/]")
+            console.print(
+                f"\nTambahkan ke `.env`:\n"
+                f"  SAHAM_ID_TELEGRAM_TOKEN={telegram_token}\n"
+                f"  SAHAM_ID_TELEGRAM_CHAT_ID={chat_id}\n"
+            )
+        else:
+            console.print("[red]Telegram connection failed.[/]")
+            console.print("Pastikan bot token dan chat_id benar.")
+            raise typer.Exit(1)
+    else:
+        # Show current status
+        table = Table(title="Alert Configuration")
+        table.add_column("Backend", style="cyan")
+        table.add_column("Status")
+        table.add_column("Config")
+
+        # Telegram
+        tg_token = getattr(_settings, "telegram_token", "") or ""
+        tg_chat = getattr(_settings, "telegram_chat_id", "") or ""
+        if tg_token and tg_chat:
+            table.add_row("Telegram", "[green]Configured[/]", f"chat_id={tg_chat[:8]}...")
+        else:
+            table.add_row("Telegram", "[yellow]Not configured[/]", "Set SAHAM_ID_TELEGRAM_TOKEN & CHAT_ID")
+
+        # Discord
+        discord_url = getattr(_settings, "discord_webhook", "") or ""
+        if discord_url:
+            table.add_row("Discord", "[green]Configured[/]", f"webhook=...{discord_url[-20:]}")
+        else:
+            table.add_row("Discord", "[yellow]Not configured[/]", "Set SAHAM_ID_DISCORD_WEBHOOK")
+
+        console.print(table)
+        console.print("\nGunakan `saham alert setup --token <BOT_TOKEN> --chat-id <CHAT_ID>` untuk test.")
+
+
+@alert_app.command("test")
+def cmd_alert_test(
+    message: str = typer.Option("Test alert dari saham-indonesia CLI", "--message", "-m"),
+    level: str = typer.Option("alert", "--level", "-l", help="info|alert|critical"),
+    backend_name: str = typer.Option("all", "--backend", "-b", help="telegram|discord|all"),
+) -> None:
+    """Send a test notification to configured backends."""
+    from saham_id.notifications import NotificationManager, TelegramBackend, DiscordBackend, ConsoleBackend, Notification
+    from saham_id.config import settings as _settings
+
+    manager = NotificationManager()
+    manager.add_backend(ConsoleBackend())
+
+    # Add Telegram if configured
+    tg_token = getattr(_settings, "telegram_token", "") or ""
+    tg_chat = getattr(_settings, "telegram_chat_id", "") or ""
+    if tg_token and tg_chat and backend_name in ("telegram", "all"):
+        manager.add_backend(TelegramBackend(bot_token=tg_token, chat_id=tg_chat))
+
+    # Add Discord if configured
+    discord_url = getattr(_settings, "discord_webhook", "") or ""
+    if discord_url and backend_name in ("discord", "all"):
+        manager.add_backend(DiscordBackend(webhook_url=discord_url))
+
+    if len(manager.backends) <= 1:  # Only console
+        console.print("[yellow]No notification backends configured (only console).[/]")
+        console.print("Run `saham alert setup` untuk configure Telegram/Discord.")
+
+    notif = Notification(title="Test Alert", message=message, level=level)  # type: ignore
+    results = manager.send_all(notif)
+
+    for backend, success in results.items():
+        status = "[green]sent[/]" if success else "[red]failed[/]"
+        console.print(f"  {backend}: {status}")
+
+
+@alert_app.command("add")
+def cmd_alert_add(
+    ticker: str = typer.Argument(..., help="IDX ticker, e.g. BBCA"),
+    field: str = typer.Option("last", "--field", "-f", help="Field to monitor: last, rsi, volume"),
+    op: str = typer.Option("<", "--op", help="Operator: <, >, <=, >=, =="),
+    value: float = typer.Option(..., "--value", "-v", help="Threshold value"),
+    message: str = typer.Option("", "--message", "-m", help="Custom alert message"),
+) -> None:
+    """Add a price/indicator alert for a ticker."""
+    from saham_id.alert_cli import add_alert
+
+    result = add_alert(ticker=ticker, field=field, op=op, value=value, message=message)
+    console.print(f"[green]{result}[/]")
+
+
+@alert_app.command("list")
+def cmd_alert_list() -> None:
+    """List all active alerts."""
+    from saham_id.alert_cli import list_alerts
+
+    alerts = list_alerts()
+    if not alerts:
+        console.print("[yellow]No alerts configured. Use `saham alert add` to create one.[/]")
+        return
+
+    table = Table(title="Active Alerts")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Condition")
+    table.add_column("Value", justify="right")
+    for a in alerts:
+        table.add_row(a["ticker"], a["condition"], f"{a['value']:,.2f}")
+    console.print(table)
+
+
+@alert_app.command("check")
+def cmd_alert_check(
+    notify: bool = typer.Option(False, "--notify", "-n", help="Send notifications for triggered alerts"),
+    source: Optional[str] = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Check all alerts against live data and optionally notify."""
+    from saham_id.alert_cli import check_alerts
+
+    src = get_source(source) if source else None
+
+    with console.status("Checking alerts against live data..."):
+        triggered = check_alerts(source=src)
+
+    if not triggered:
+        console.print("[green]No alerts triggered.[/]")
+        return
+
+    table = Table(title="Triggered Alerts")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Triggered")
+    table.add_column("Values")
+    for t in triggered:
+        table.add_row(
+            t["ticker"],
+            "; ".join(str(a) for a in t["alerts"][:3]),
+            str(t.get("values", {})),
+        )
+    console.print(table)
+
+    # Send notifications if requested
+    if notify and triggered:
+        from saham_id.notifications import NotificationManager, TelegramBackend, ConsoleBackend, Notification
+        from saham_id.config import settings as _settings
+
+        manager = NotificationManager()
+        tg_token = getattr(_settings, "telegram_token", "") or ""
+        tg_chat = getattr(_settings, "telegram_chat_id", "") or ""
+        if tg_token and tg_chat:
+            manager.add_backend(TelegramBackend(bot_token=tg_token, chat_id=tg_chat))
+        else:
+            manager.add_backend(ConsoleBackend())
+
+        for t in triggered:
+            notif = Notification(
+                title=f"Alert: {t['ticker']}",
+                message="; ".join(str(a) for a in t["alerts"][:3]),
+                level="alert",
+                ticker=t["ticker"],
+            )
+            manager.send_all(notif)
+
+        console.print(f"[green]Sent {len(triggered)} notification(s).[/]")
+
+
+@alert_app.command("remove")
+def cmd_alert_remove(
+    ticker: str = typer.Argument(..., help="Ticker to remove alerts for"),
+) -> None:
+    """Remove all alerts for a ticker."""
+    from saham_id.alert_cli import remove_alert
+
+    result = remove_alert(ticker)
+    console.print(f"[green]{result}[/]")
 
 
 # ---------------------------------------------------------------------------

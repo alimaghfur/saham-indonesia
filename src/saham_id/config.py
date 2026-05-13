@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     retry_min_wait: float = Field(default=1.0, alias="SAHAM_ID_RETRY_MIN_WAIT")
     retry_max_wait: float = Field(default=30.0, alias="SAHAM_ID_RETRY_MAX_WAIT")
 
+    # --- Notification settings ---
+    telegram_token: str = Field(default="", alias="SAHAM_ID_TELEGRAM_TOKEN")
+    telegram_chat_id: str = Field(default="", alias="SAHAM_ID_TELEGRAM_CHAT_ID")
+    discord_webhook: str = Field(default="", alias="SAHAM_ID_DISCORD_WEBHOOK")
+    webhook_url: str = Field(default="", alias="SAHAM_ID_WEBHOOK_URL")
+
     @property
     def data_source_chain(self) -> list[str]:
         return [s.strip().lower() for s in self.data_sources.split(",") if s.strip()]
