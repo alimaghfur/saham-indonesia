@@ -39,6 +39,62 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+# --- Helper functions (must be defined before use) ---
+def _render_compare_page():
+    """Inline comparison page."""
+    st.title("Stock Comparison")
+    st.markdown("Bandingkan performa 2-5 saham (rebased to 100).")
+
+    tickers_input = st.text_input("Tickers (comma-separated)", value="BBCA, BBRI, BMRI")
+    period = st.selectbox("Period", ["3mo", "6mo", "1y", "2y"], index=1)
+
+    if st.button("Compare", type="primary"):
+        try:
+            from saham_id.data.sources import get_source
+            from saham_id.charting.comparison import comparison_chart, drawdown_comparison
+
+            ticker_list = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
+            if len(ticker_list) < 2:
+                st.warning("Masukkan minimal 2 ticker.")
+                return
+
+            src = get_source()
+            dataframes = {}
+            with st.spinner("Fetching data..."):
+                for ticker in ticker_list:
+                    try:
+                        df = src.get_ohlc(ticker, period=period, interval="1d")
+                        if not df.empty:
+                            dataframes[ticker] = df
+                    except Exception:
+                        pass
+
+            if len(dataframes) < 2:
+                st.error("Tidak cukup data.")
+                return
+
+            fig = comparison_chart(dataframes, title=f"Comparison: {', '.join(dataframes.keys())}")
+            st.plotly_chart(fig, use_container_width=True)
+
+            fig_dd = drawdown_comparison(dataframes)
+            st.plotly_chart(fig_dd, use_container_width=True)
+
+            # Summary table
+            st.subheader("Performance Summary")
+            rows = []
+            for ticker, df in dataframes.items():
+                first = df["close"].iloc[0]
+                last = df["close"].iloc[-1]
+                ret = (last - first) / first * 100 if first else 0
+                rows.append({"Ticker": ticker, "Start": f"Rp {first:,.0f}", "End": f"Rp {last:,.0f}", "Return": f"{ret:+.2f}%"})
+            import pandas as pd
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+
 # --- Sidebar navigation ---
 st.sidebar.title("Saham Indonesia")
 st.sidebar.markdown("**IDX Analytics & Screener**")
@@ -93,57 +149,3 @@ elif page == "Portfolio":
 elif page == "Watchlist & Fee":
     from dashboard.pages import watchlist_page
     watchlist_page.render()
-
-
-def _render_compare_page():
-    """Inline comparison page."""
-    st.title("Stock Comparison")
-    st.markdown("Bandingkan performa 2-5 saham (rebased to 100).")
-
-    tickers_input = st.text_input("Tickers (comma-separated)", value="BBCA, BBRI, BMRI")
-    period = st.selectbox("Period", ["3mo", "6mo", "1y", "2y"], index=1)
-
-    if st.button("Compare", type="primary"):
-        try:
-            from saham_id.data.sources import get_source
-            from saham_id.charting.comparison import comparison_chart, drawdown_comparison
-
-            ticker_list = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
-            if len(ticker_list) < 2:
-                st.warning("Masukkan minimal 2 ticker.")
-                return
-
-            src = get_source()
-            dataframes = {}
-            with st.spinner("Fetching data..."):
-                for ticker in ticker_list:
-                    try:
-                        df = src.get_ohlc(ticker, period=period, interval="1d")
-                        if not df.empty:
-                            dataframes[ticker] = df
-                    except Exception:
-                        pass
-
-            if len(dataframes) < 2:
-                st.error("Tidak cukup data.")
-                return
-
-            fig = comparison_chart(dataframes, title=f"Comparison: {', '.join(dataframes.keys())}")
-            st.plotly_chart(fig, use_container_width=True)
-
-            fig_dd = drawdown_comparison(dataframes)
-            st.plotly_chart(fig_dd, use_container_width=True)
-
-            # Summary table
-            st.subheader("Performance Summary")
-            rows = []
-            for ticker, df in dataframes.items():
-                first = df["close"].iloc[0]
-                last = df["close"].iloc[-1]
-                ret = (last - first) / first * 100 if first else 0
-                rows.append({"Ticker": ticker, "Start": f"Rp {first:,.0f}", "End": f"Rp {last:,.0f}", "Return": f"{ret:+.2f}%"})
-            import pandas as pd
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Error: {e}")
