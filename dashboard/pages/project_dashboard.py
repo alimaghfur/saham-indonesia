@@ -1,107 +1,140 @@
-"""Project Dashboard — Modern overview page inspired by Panze Studio design.
+"""Project Dashboard — Modern dark-themed overview page.
 
-Uses Streamlit native components properly with targeted CSS enhancements
-for a clean, card-based modern dashboard look.
+Properly styled for Streamlit dark mode with card-based layout.
+Inspired by Panze Studio project management dashboard design.
 """
 
 from __future__ import annotations
 
 import streamlit as st
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+import plotly.graph_objects as go
 
 
 def render() -> None:
     """Render the modern Project Dashboard."""
 
-    # --- Custom CSS ---
-    st.markdown(_get_custom_css(), unsafe_allow_html=True)
+    # --- Inject CSS for dark theme cards ---
+    st.markdown(_get_css(), unsafe_allow_html=True)
 
-    # --- Header Section ---
-    header_left, header_right = st.columns([3, 2])
-    with header_left:
-        st.caption("Manage and track your investments")
-        st.markdown("## Investment Dashboard")
-    with header_right:
-        time_filter = st.radio(
-            "Period",
-            ["Today", "This Week", "This Month", "Reports"],
-            horizontal=True,
-            index=2,
-            label_visibility="collapsed",
-        )
+    # --- Header ---
+    st.markdown(
+        """
+        <div style="margin-bottom: 8px;">
+            <span style="color: #aaa; font-size: 0.9em;">Manage and track your investments</span>
+            <h1 style="color: #FF8C00; margin: 0; font-size: 1.8em; font-weight: 700;">Investment Dashboard</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.divider()
+    # --- Time Filter + Search ---
+    fcol1, fcol2, fcol3, fcol4, _, scol = st.columns([0.8, 0.8, 0.9, 0.8, 1, 2.5])
+    with fcol1:
+        st.button("Today", use_container_width=True, type="secondary")
+    with fcol2:
+        st.button("This Week", use_container_width=True, type="secondary")
+    with fcol3:
+        st.button("This Month", use_container_width=True, type="primary")
+    with fcol4:
+        st.button("Reports", use_container_width=True, type="secondary")
+    with scol:
+        st.text_input("search", placeholder="Search Stock, Signal, Portfolio...", label_visibility="collapsed")
 
-    # === ROW 1: Tasks | Portfolio Overview | Profit vs Loss ===
-    col_tasks, col_overview, col_pnl = st.columns([1, 1.2, 1.5])
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
 
-    with col_tasks:
-        _render_my_tasks()
+    # === MAIN LAYOUT ===
+    # Row 1: My Tasks | Portfolio Overview | Profit VS Loss | My Alerts
+    r1c1, r1c2, r1c3, r1c4 = st.columns([1.3, 1.2, 1.5, 1.2])
 
-    with col_overview:
-        _render_portfolio_overview()
+    with r1c1:
+        _card_my_tasks()
 
-    with col_pnl:
-        _render_profit_vs_loss()
+    with r1c2:
+        _card_portfolio_overview()
 
-    st.divider()
+    with r1c3:
+        _card_profit_vs_loss()
 
-    # === ROW 2: Stock Performance | Alerts & Tickets ===
-    col_perf, col_side = st.columns([2.5, 1])
+    with r1c4:
+        _card_my_alerts()
 
-    with col_perf:
-        _render_stock_performance()
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
 
-    with col_side:
-        _render_my_alerts()
-        st.markdown("")
-        _render_open_tickets()
+    # Row 2: Stock Performance | Open Tickets
+    r2c1, r2c2 = st.columns([2.8, 1.2])
+
+    with r2c1:
+        _card_stock_performance()
+
+    with r2c2:
+        _card_open_tickets()
 
 
-def _render_my_tasks() -> None:
-    """My Tasks card — watchlist actions pending."""
-    st.markdown("#### My Tasks")
+# ─── CARD: MY TASKS ──────────────────────────────────────────────────────────
+
+def _card_my_tasks() -> None:
+    st.markdown(
+        """
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">My Tasks</span>
+                <span class="ds-card-btn">+</span>
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     tasks = [
-        {"icon": "📈", "title": "BBCA — Review Entry", "desc": "Score 78/100, R:R 2.5:1", "status": "urgent"},
-        {"icon": "🔍", "title": "TLKM — Monitor Support", "desc": "Mendekati support Rp 3,450", "status": "warning"},
-        {"icon": "⚠️", "title": "ASII — Check Stop Loss", "desc": "Mendekati SL di Rp 4,800", "status": "danger"},
-        {"icon": "💰", "title": "BMRI — Take Profit T1", "desc": "Sudah mencapai target 1", "status": "success"},
-        {"icon": "📊", "title": "UNVR — Rebalance", "desc": "Alokasi > 25% portfolio", "status": "info"},
+        ("📈", "BBCA — Review Entry", "Score 78/100, R:R 2.5:1"),
+        ("🔍", "TLKM — Monitor Support", "Mendekati support Rp 3,450"),
+        ("⚠️", "ASII — Check Stop Loss", "Mendekati SL di Rp 4,800"),
+        ("💰", "BMRI — Take Profit T1", "Sudah mencapai target 1"),
+        ("📊", "UNVR — Rebalance", "Alokasi > 25% portfolio"),
     ]
 
-    for task in tasks:
-        with st.container():
-            st.markdown(
-                f"""<div class="dash-task-item">
-                    <span class="dash-task-icon">{task['icon']}</span>
-                    <div>
-                        <strong>{task['title']}</strong><br>
-                        <small style="color:#888">{task['desc']}</small>
-                    </div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
+    rows_html = ""
+    for icon, title, desc in tasks:
+        rows_html += f"""
+            <div class="ds-task-row">
+                <span class="ds-task-icon">{icon}</span>
+                <div class="ds-task-text">
+                    <div class="ds-task-title">{title}</div>
+                    <div class="ds-task-desc">{desc}</div>
+                </div>
+                <span class="ds-task-check">&#10003;</span>
+            </div>
+        """
 
     st.markdown(
-        f"""<div class="dash-task-badge">
-            <span class="dash-badge-num">{len(tasks)}</span> On Going Tasks
-        </div>""",
+        f"""
+            {rows_html}
+            <div class="ds-task-footer">
+                <span class="ds-badge">{len(tasks)}</span> On Going Tasks
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
 
-def _render_portfolio_overview() -> None:
-    """Portfolio Overview — donut chart."""
-    st.markdown("#### Portfolio Overview")
+# ─── CARD: PORTFOLIO OVERVIEW ────────────────────────────────────────────────
 
-    import plotly.graph_objects as go
+def _card_portfolio_overview() -> None:
+    st.markdown(
+        """
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">Portfolio Overview</span>
+                <span class="ds-card-btn">&#8599;</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     labels = ["Profit", "Loss", "Holding"]
     values = [32, 14, 54]
-    colors = ["#4CAF50", "#FF9800", "#E0E0E0"]
+    colors = ["#4CAF50", "#FF9800", "#555555"]
 
     fig = go.Figure(data=[go.Pie(
         labels=labels,
@@ -115,32 +148,48 @@ def _render_portfolio_overview() -> None:
     fig.update_layout(
         showlegend=False,
         margin=dict(l=0, r=0, t=0, b=0),
-        height=220,
+        height=200,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         annotations=[dict(
-            text=f"<b>{sum(values)}</b><br><span style='font-size:11px'>Stocks</span>",
+            text=f"<b style='color:white'>{sum(values)}</b><br><span style='color:#aaa;font-size:11px'>Stocks</span>",
             x=0.5, y=0.5,
             font_size=20,
             showarrow=False,
-            font=dict(color="#333"),
+            font=dict(color="white"),
         )],
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # Legend
-    leg1, leg2, leg3 = st.columns(3)
-    leg1.markdown(f"<span style='color:#FF9800'>&#9679;</span> Loss: **{values[1]}**", unsafe_allow_html=True)
-    leg2.markdown(f"<span style='color:#4CAF50'>&#9679;</span> Profit: **{values[0]}**", unsafe_allow_html=True)
-    leg3.markdown(f"<span style='color:#bbb'>&#9679;</span> Hold: **{values[2]}**", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="ds-legend">
+            <span><span style="color:#FF9800">&#9679;</span> Loss: {values[1]}</span>
+            <span><span style="color:#4CAF50">&#9679;</span> Profit: {values[0]}</span>
+        </div>
+        <div class="ds-legend" style="justify-content:center">
+            <span><span style="color:#666">&#9679;</span> Holding: {values[2]}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-def _render_profit_vs_loss() -> None:
-    """Profit vs Loss line chart."""
-    st.markdown("#### Profit VS Loss")
+# ─── CARD: PROFIT VS LOSS ────────────────────────────────────────────────────
 
-    import plotly.graph_objects as go
+def _card_profit_vs_loss() -> None:
+    st.markdown(
+        """
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">Profit VS Loss</span>
+                <span class="ds-card-btn">&#9881; &#8599;</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
     profit = [18.5, 22.3, 19.8, 25.1, 28.6, 24.6, 30.2]
@@ -148,17 +197,15 @@ def _render_profit_vs_loss() -> None:
 
     fig = go.Figure()
 
-    # Profit area
     fig.add_trace(go.Scatter(
         x=months, y=profit,
         mode="lines",
         name="Profit",
         line=dict(color="#4CAF50", width=2.5, shape="spline"),
         fill="tozeroy",
-        fillcolor="rgba(76, 175, 80, 0.08)",
+        fillcolor="rgba(76,175,80,0.1)",
     ))
 
-    # Loss line
     fig.add_trace(go.Scatter(
         x=months, y=loss,
         mode="lines",
@@ -168,192 +215,299 @@ def _render_profit_vs_loss() -> None:
 
     fig.update_layout(
         showlegend=True,
-        legend=dict(orientation="h", yanchor="top", y=1.12, xanchor="center", x=0.5, font=dict(size=10)),
+        legend=dict(
+            orientation="h", yanchor="top", y=1.15, xanchor="center", x=0.5,
+            font=dict(size=10, color="#ccc"),
+        ),
         margin=dict(l=0, r=0, t=25, b=0),
-        height=220,
+        height=200,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(showgrid=False, showline=False, tickfont=dict(size=10)),
-        yaxis=dict(showgrid=True, gridcolor="rgba(0,0,0,0.05)", showline=False, tickfont=dict(size=10)),
+        xaxis=dict(showgrid=False, showline=False, tickfont=dict(size=10, color="#888")),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.06)", showline=False, tickfont=dict(size=10, color="#888")),
         hovermode="x unified",
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # Summary
-    m1, m2 = st.columns(2)
-    m1.markdown("<span style='color:#4CAF50; font-size:0.85em'>&#9679; Profit: **Rp 24,6 jt**</span>", unsafe_allow_html=True)
-    m2.markdown("<span style='color:#FF9800; font-size:0.85em'>&#9679; Loss: **Rp 13,3 jt**</span>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="ds-pnl-summary">
+            <span style="color:#4CAF50">&#9679; Profit: Rp 24.600.000</span>
+            <span style="color:#FF9800">&#9679; Loss: Rp 13.290.000</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-def _render_stock_performance() -> None:
-    """Stock Performance — progress bars like Invoice Overview."""
-    st.markdown("#### Stock Performance")
+# ─── CARD: MY ALERTS ─────────────────────────────────────────────────────────
 
-    stocks = [
-        {"name": "Strong Buy", "count": 5, "value": "Rp 183 jt", "pct": 90, "color": "#4CAF50"},
-        {"name": "Buy", "count": 8, "value": "Rp 245 jt", "pct": 75, "color": "#8BC34A"},
-        {"name": "Hold", "count": 12, "value": "Rp 320 jt", "pct": 60, "color": "#2196F3"},
-        {"name": "Watch", "count": 5, "value": "Rp 95 jt", "pct": 35, "color": "#FF9800"},
-        {"name": "Avoid", "count": 3, "value": "Rp 45 jt", "pct": 15, "color": "#f44336"},
-    ]
-
-    for stock in stocks:
-        c1, c2, c3, c4 = st.columns([1.2, 0.4, 1, 3])
-        with c1:
-            st.markdown(f"**{stock['name']}**")
-        with c2:
-            st.caption(f"{stock['count']}")
-        with c3:
-            st.caption(stock['value'])
-        with c4:
-            st.markdown(
-                f"""<div style="background:#f0f0f0; border-radius:6px; height:12px; margin-top:8px; overflow:hidden;">
-                    <div style="width:{stock['pct']}%; background:{stock['color']}; height:100%; border-radius:6px; transition: width 0.5s;"></div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-
-
-def _render_my_alerts() -> None:
-    """My Alerts section."""
-    st.markdown("#### My Alerts")
+def _card_my_alerts() -> None:
+    st.markdown(
+        """
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">My Alerts</span>
+                <span class="ds-card-btn">&#128197;</span>
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     alerts = [
-        {"title": "BBCA Breakout", "time": "09:15", "type": "Signal"},
-        {"title": "TLKM Support Hit", "time": "10:30", "type": "Alert"},
-        {"title": "Portfolio Review", "time": "14:00", "type": "Task"},
+        ("BBCA Breakout", "09:15", "📈 Signal"),
+        ("TLKM Support Hit", "10:30", "🔔 Alert"),
+        ("Portfolio Review", "14:00", "📋 Task"),
     ]
 
-    for alert in alerts:
-        st.markdown(
-            f"""<div class="dash-alert-card">
+    alerts_html = ""
+    for title, time, atype in alerts:
+        alerts_html += f"""
+            <div class="ds-alert-row">
                 <div>
-                    <small style="color:#aaa">Alert</small><br>
-                    <strong style="font-size:0.9em">{alert['title']}</strong>
+                    <div class="ds-alert-label">My Alerts</div>
+                    <div class="ds-alert-title">{title}</div>
                 </div>
                 <div style="text-align:right">
-                    <strong style="font-size:0.85em">{alert['time']}</strong><br>
-                    <small style="color:#888">{alert['type']}</small>
+                    <div class="ds-alert-time">{time}</div>
+                    <div class="ds-alert-type">{atype}</div>
                 </div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
+                <span class="ds-alert-arrow">&#8599;</span>
+            </div>
+        """
 
-    st.caption("See All Alerts >")
+    st.markdown(
+        f"""
+            {alerts_html}
+            <div class="ds-see-all">See All Alerts &gt;</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-def _render_open_tickets() -> None:
-    """Open Tickets — watchlist items needing attention."""
-    st.markdown("#### Open Tickets")
+# ─── CARD: STOCK PERFORMANCE ─────────────────────────────────────────────────
 
-    tickets = [
-        {"name": "BBCA", "msg": "Entry score 78, mendekati buy zone.", "avatar": "🏦"},
-        {"name": "TLKM", "msg": "3 hari di support, perlu konfirmasi.", "avatar": "📡"},
-        {"name": "ASII", "msg": "Breakdown MA50, review cut loss.", "avatar": "🚗"},
+def _card_stock_performance() -> None:
+    st.markdown(
+        """
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">Stock Performance</span>
+                <span class="ds-card-btn">&#9881;</span>
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    stocks = [
+        ("Strong Buy", 5, "Rp 183.000.000", 90, "#4CAF50"),
+        ("Buy", 8, "Rp 245.000.000", 75, "#8BC34A"),
+        ("Hold", 12, "Rp 320.000.000", 60, "#2196F3"),
+        ("Watch", 5, "Rp 95.000.000", 35, "#FF9800"),
+        ("Avoid", 3, "Rp 45.000.000", 15, "#f44336"),
     ]
 
-    for ticket in tickets:
-        st.markdown(
-            f"""<div class="dash-ticket-card">
-                <span style="font-size:1.5em">{ticket['avatar']}</span>
-                <div style="flex:1">
-                    <strong>{ticket['name']}</strong>
-                    <br><small style="color:#888">{ticket['msg']}</small>
+    rows_html = ""
+    for name, count, value, pct, color in stocks:
+        rows_html += f"""
+            <div class="ds-perf-row">
+                <div class="ds-perf-name">{name}</div>
+                <div class="ds-perf-count">{count}</div>
+                <div class="ds-perf-sep">|</div>
+                <div class="ds-perf-val">{value}</div>
+                <div class="ds-perf-bar-bg">
+                    <div class="ds-perf-bar" style="width:{pct}%; background:{color}"></div>
                 </div>
-                <small style="color:#aaa; cursor:pointer">Check ></small>
-            </div>""",
-            unsafe_allow_html=True,
-        )
+            </div>
+        """
+
+    st.markdown(f"{rows_html}</div>", unsafe_allow_html=True)
 
 
-def _get_custom_css() -> str:
-    """Targeted CSS that works with Streamlit's DOM structure."""
+# ─── CARD: OPEN TICKETS ──────────────────────────────────────────────────────
+
+def _card_open_tickets() -> None:
+    st.markdown(
+        """
+        <div class="ds-card">
+            <div class="ds-card-head">
+                <span class="ds-card-title">Open Tickets</span>
+                <span class="ds-card-btn">&#9881;</span>
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tickets = [
+        ("🏦", "BBCA", "Entry score 78, mendekati buy zone. Review segera."),
+        ("📡", "TLKM", "Sudah 3 hari di support. Perlu konfirmasi volume."),
+        ("🚗", "ASII", "Breakdown MA50, pertimbangkan cut loss."),
+    ]
+
+    tickets_html = ""
+    for avatar, name, msg in tickets:
+        tickets_html += f"""
+            <div class="ds-ticket-row">
+                <span class="ds-ticket-avatar">{avatar}</span>
+                <div class="ds-ticket-body">
+                    <div class="ds-ticket-name">{name}</div>
+                    <div class="ds-ticket-msg">{msg}</div>
+                </div>
+                <span class="ds-ticket-action">Check &gt;</span>
+            </div>
+        """
+
+    st.markdown(f"{tickets_html}</div>", unsafe_allow_html=True)
+
+
+# ─── CSS ──────────────────────────────────────────────────────────────────────
+
+def _get_css() -> str:
     return """
-    <style>
-    /* Page background */
-    .stApp {
-        background: linear-gradient(135deg, #fdf6ee 0%, #f8f9ff 50%, #f0f4ff 100%);
-    }
+<style>
+/* ── Card container ── */
+.ds-card {
+    background: #1e1e2e;
+    border: 1px solid #2a2a3e;
+    border-radius: 16px;
+    padding: 18px 20px;
+    margin-bottom: 10px;
+}
+.ds-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.ds-card-title {
+    font-weight: 600;
+    font-size: 1em;
+    color: #eee;
+}
+.ds-card-btn {
+    color: #666;
+    font-size: 1.1em;
+    cursor: pointer;
+}
 
-    /* Remove default padding */
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 1rem !important;
-    }
+/* ── Task rows ── */
+.ds-task-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #2a2a3e;
+}
+.ds-task-icon { font-size: 1.2em; }
+.ds-task-text { flex: 1; }
+.ds-task-title { font-weight: 600; font-size: 0.85em; color: #ddd; }
+.ds-task-desc { font-size: 0.75em; color: #888; margin-top: 2px; }
+.ds-task-check { color: #4CAF50; opacity: 0.6; }
+.ds-task-footer {
+    margin-top: 12px;
+    padding: 6px 12px;
+    background: #252535;
+    border-radius: 16px;
+    font-size: 0.8em;
+    color: #aaa;
+    display: inline-block;
+}
+.ds-badge {
+    background: #4CAF50;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    margin-right: 5px;
+}
 
-    /* Task items */
-    .dash-task-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 10px 12px;
-        background: white;
-        border-radius: 12px;
-        margin-bottom: 6px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        border: 1px solid #f0f0f0;
-    }
-    .dash-task-icon {
-        font-size: 1.3em;
-    }
-    .dash-task-badge {
-        display: inline-block;
-        margin-top: 10px;
-        padding: 6px 14px;
-        background: #f8f9fa;
-        border-radius: 20px;
-        font-size: 0.85em;
-        color: #555;
-        border: 1px solid #eee;
-    }
-    .dash-badge-num {
-        background: #1a1a2e;
-        color: white;
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-size: 0.85em;
-        margin-right: 6px;
-    }
+/* ── Legend ── */
+.ds-legend {
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    font-size: 0.8em;
+    color: #aaa;
+    margin-top: 4px;
+}
 
-    /* Alert cards */
-    .dash-alert-card {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 14px;
-        background: white;
-        border-radius: 12px;
-        margin-bottom: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        border: 1px solid #f0f0f0;
-    }
+/* ── P&L Summary ── */
+.ds-pnl-summary {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8em;
+    padding: 0 4px;
+}
 
-    /* Ticket cards */
-    .dash-ticket-card {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 12px 14px;
-        background: white;
-        border-radius: 12px;
-        margin-bottom: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        border: 1px solid #f0f0f0;
-    }
+/* ── Alert rows ── */
+.ds-alert-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #252535;
+    border-radius: 12px;
+    margin-bottom: 8px;
+}
+.ds-alert-label { font-size: 0.65em; color: #666; }
+.ds-alert-title { font-weight: 600; font-size: 0.85em; color: #ddd; }
+.ds-alert-time { font-weight: 700; font-size: 0.85em; color: #eee; }
+.ds-alert-type { font-size: 0.7em; color: #888; }
+.ds-alert-arrow { color: #555; font-size: 0.9em; margin-left: auto; }
+.ds-see-all { text-align: center; font-size: 0.8em; color: #666; padding: 8px 0; }
 
-    /* Metrics - make them more compact */
-    [data-testid="stMetric"] {
-        background: white;
-        padding: 12px 16px;
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        border: 1px solid #f0f0f0;
-    }
+/* ── Performance rows ── */
+.ds-perf-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #2a2a3e;
+}
+.ds-perf-name { font-weight: 600; font-size: 0.9em; color: #ddd; min-width: 90px; }
+.ds-perf-count { font-size: 0.85em; color: #888; min-width: 24px; }
+.ds-perf-sep { color: #333; }
+.ds-perf-val { font-size: 0.85em; color: #aaa; min-width: 140px; }
+.ds-perf-bar-bg {
+    flex: 1;
+    background: #2a2a3e;
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+}
+.ds-perf-bar {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.6s ease;
+}
 
-    /* Hide hamburger menu & footer */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-    """
+/* ── Ticket rows ── */
+.ds-ticket-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 1px solid #2a2a3e;
+}
+.ds-ticket-avatar {
+    width: 38px; height: 38px;
+    background: #252535;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+}
+.ds-ticket-body { flex: 1; }
+.ds-ticket-name { font-weight: 700; font-size: 0.88em; color: #ddd; }
+.ds-ticket-msg { font-size: 0.75em; color: #888; margin-top: 3px; line-height: 1.3; }
+.ds-ticket-action { font-size: 0.78em; color: #666; cursor: pointer; }
+
+/* ── Hide Streamlit chrome ── */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+</style>
+"""
