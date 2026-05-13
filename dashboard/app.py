@@ -38,11 +38,11 @@ with st.sidebar:
     # Logo / Brand
     st.markdown(
         """
-        <div style="text-align:center; padding: 10px 0 20px 0;">
-            <div style="font-size: 1.3em; font-weight: 700; color: #f1f5f9; margin-top: 4px;">
+        <div style="padding: 16px 0 24px 0;">
+            <div style="font-size: 1.2em; font-weight: 700; color: #f1f5f9; letter-spacing: -0.3px;">
                 Saham Indonesia
             </div>
-            <div style="font-size: 0.75em; color: #64748b; margin-top: 2px;">
+            <div style="font-size: 0.7em; color: #64748b; margin-top: 4px; letter-spacing: 1px; text-transform: uppercase;">
                 IDX Analytics Platform
             </div>
         </div>
@@ -50,52 +50,90 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown("---")
+    # Navigation — grouped sections
+    PAGES = [
+        ("Investment Advisor", "Investment Advisor"),
+        ("Market Overview", "Market Overview"),
+        ("Real-time", "Real-time"),
+        ("Heatmap", "Heatmap"),
+        ("Technical Chart", "Technical Chart"),
+        ("Compare", "Compare"),
+        ("Score Card", "Score Card"),
+        ("Bandarmology", "Bandarmology"),
+        ("Sinyal", "Sinyal"),
+        ("Screener", "Screener"),
+        ("Backtest", "Backtest"),
+        ("Portfolio", "Portfolio"),
+        ("Watchlist & Fee", "Watchlist & Fee"),
+    ]
 
-    # Navigation
-    PAGES = {
-        "Investment Advisor": "Investment Advisor",
-        "Market Overview": "Market Overview",
-        "Real-time": "Real-time",
-        "Heatmap": "Heatmap",
-        "Technical Chart": "Technical Chart",
-        "Compare": "Compare",
-        "Score Card": "Score Card",
-        "Bandarmology": "Bandarmology",
-        "Sinyal": "Sinyal",
-        "Screener": "Screener",
-        "Backtest": "Backtest",
-        "Portfolio": "Portfolio",
-        "Watchlist & Fee": "Watchlist & Fee",
-    }
+    page_labels = [p[0] for p in PAGES]
 
-    page = st.radio(
-        "Menu",
-        list(PAGES.keys()),
-        index=0,
-        label_visibility="collapsed",
+    # Section: Analysis
+    st.markdown(
+        '<p style="font-size:0.7em; color:#475569; text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 0; font-weight:600;">Analysis</p>',
+        unsafe_allow_html=True,
     )
+    selected_idx = None
+    analysis_pages = page_labels[:4]
+    for i, label in enumerate(analysis_pages):
+        if st.button(label, key=f"nav_{i}", use_container_width=True, type="secondary"):
+            selected_idx = i
 
-    st.markdown("---")
+    # Section: Charts
+    st.markdown(
+        '<p style="font-size:0.7em; color:#475569; text-transform:uppercase; letter-spacing:1px; margin:16px 0 4px 0; font-weight:600;">Charts</p>',
+        unsafe_allow_html=True,
+    )
+    chart_pages = page_labels[4:7]
+    for i, label in enumerate(chart_pages, start=4):
+        if st.button(label, key=f"nav_{i}", use_container_width=True, type="secondary"):
+            selected_idx = i
 
-    # Footer info
+    # Section: Signals & Screening
+    st.markdown(
+        '<p style="font-size:0.7em; color:#475569; text-transform:uppercase; letter-spacing:1px; margin:16px 0 4px 0; font-weight:600;">Signals & Screening</p>',
+        unsafe_allow_html=True,
+    )
+    signal_pages = page_labels[7:11]
+    for i, label in enumerate(signal_pages, start=7):
+        if st.button(label, key=f"nav_{i}", use_container_width=True, type="secondary"):
+            selected_idx = i
+
+    # Section: Portfolio
+    st.markdown(
+        '<p style="font-size:0.7em; color:#475569; text-transform:uppercase; letter-spacing:1px; margin:16px 0 4px 0; font-weight:600;">Portfolio</p>',
+        unsafe_allow_html=True,
+    )
+    portfolio_pages = page_labels[11:]
+    for i, label in enumerate(portfolio_pages, start=11):
+        if st.button(label, key=f"nav_{i}", use_container_width=True, type="secondary"):
+            selected_idx = i
+
+    # Handle navigation state
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = 0
+
+    if selected_idx is not None:
+        st.session_state.current_page = selected_idx
+        st.rerun()
+
+    # Footer
     st.markdown(
         """
-        <div style="padding: 10px 0; font-size: 0.75em; color: #64748b; text-align: center;">
-            <div>Data: <a href="https://pypi.org/project/yfinance/" style="color:#60a5fa; text-decoration:none;">yfinance</a> (delayed 15m)</div>
-            <div style="margin-top: 6px;">
-                <a href="https://github.com/alimaghfur/saham-indonesia" style="color:#60a5fa; text-decoration:none;">
-                    GitHub Repository
-                </a>
+        <div style="position:absolute; bottom:16px; left:16px; right:16px; font-size:0.7em; color:#475569;">
+            <div>Data: yfinance (delayed 15m)</div>
+            <div style="margin-top:4px;">
+                <a href="https://github.com/alimaghfur/saham-indonesia" style="color:#60a5fa; text-decoration:none;">GitHub</a>
+                &middot; v0.1.0
             </div>
-            <div style="margin-top: 8px; color: #475569;">v0.1.0</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-# Get the actual page name
-selected_page = PAGES[page]
+# Get current page
+selected_page = PAGES[st.session_state.current_page][1]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -24,6 +24,28 @@ def inject_global_css() -> str:
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
     font-size: 0.9em;
 }
+[data-testid="stSidebar"] .stButton > button {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #94a3b8;
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 0.85em;
+    font-weight: 400;
+    transition: all 0.15s ease;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(37, 99, 235, 0.1);
+    color: #e2e8f0;
+    transform: none;
+    box-shadow: none;
+}
+[data-testid="stSidebar"] .stButton > button:focus {
+    background: rgba(37, 99, 235, 0.15);
+    color: #60a5fa;
+    border-left: 2px solid #2563EB;
+}
 
 /* --- Metric Cards --- */
 [data-testid="stMetric"] {
