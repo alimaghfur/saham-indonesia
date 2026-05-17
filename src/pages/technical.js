@@ -127,7 +127,7 @@ function indicatorRow(name, value, isBullish) {
 }
 
 function renderSVGChart(candles) {
-    if (!candles || candles.length === 0) return '<p class="text-center text-dark-400 py-12">No data</p>';
+    if (!candles || candles.length < 2) return '<p class="text-center text-dark-400 py-12">No data</p>';
     
     const width = 800, height = 280, padding = 40;
     const prices = candles.map(c => [c.high, c.low]).flat();

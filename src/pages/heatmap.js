@@ -1,6 +1,15 @@
 async function getHeatmapPage() {
     const data = await fetchAPI('/market/top-movers?limit=30');
     const allStocks = [...(data?.gainers || []), ...(data?.losers || [])];
+    // Remove duplicates by symbol
+    const uniqueStocks = [];
+    const seen = new Set();
+    for (const s of allStocks) {
+        if (!seen.has(s.symbol)) {
+            seen.add(s.symbol);
+            uniqueStocks.push(s);
+        }
+    }
     const sectorsData = await fetchAPI('/market/sectors');
     const sectors = sectorsData?.sectors || [];
 
@@ -16,7 +25,7 @@ async function getHeatmapPage() {
         <div class="card p-5">
             <h3 class="text-sm font-semibold text-white mb-4">Market Heatmap</h3>
             <div class="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
-                ${allStocks.map(s => heatCell(s)).join('')}
+                ${uniqueStocks.map(s => heatCell(s)).join('')}
             </div>
             <div class="flex items-center justify-center mt-4 gap-2 text-xs text-dark-400">
                 <div class="flex items-center gap-1"><div class="w-4 h-3 bg-red-600 rounded"></div><span>&lt;-3%</span></div>

@@ -76,12 +76,12 @@ async function loadHeaderIndices() {
         if (headerEl && ihsg && lq45) {
             headerEl.innerHTML = `
                 <span class="text-dark-300">IHSG</span>
-                <span class="font-semibold text-white">${ihsg.price.toLocaleString('id-ID')}</span>
-                <span class="${ihsg.change >= 0 ? 'stat-up' : 'stat-down'} text-xs">${ihsg.change >= 0 ? '+' : ''}${ihsg.change_pct}%</span>
+                <span class="font-semibold text-white">${(ihsg.price || 0).toLocaleString('id-ID')}</span>
+                <span class="${ihsg.change >= 0 ? 'stat-up' : 'stat-down'} text-xs">${ihsg.change >= 0 ? '+' : ''}${ihsg.change_pct || 0}%</span>
                 <span class="text-dark-600">|</span>
                 <span class="text-dark-300">LQ45</span>
-                <span class="font-semibold text-white">${lq45.price.toLocaleString('id-ID')}</span>
-                <span class="${lq45.change >= 0 ? 'stat-up' : 'stat-down'} text-xs">${lq45.change >= 0 ? '+' : ''}${lq45.change_pct}%</span>
+                <span class="font-semibold text-white">${(lq45.price || 0).toLocaleString('id-ID')}</span>
+                <span class="${lq45.change >= 0 ? 'stat-up' : 'stat-down'} text-xs">${lq45.change >= 0 ? '+' : ''}${lq45.change_pct || 0}%</span>
             `;
         }
     }

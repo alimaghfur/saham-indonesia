@@ -80,6 +80,7 @@ async function getHistory(symbol, period1, period2, interval) {
 
 // Calculate technical indicators
 function calcSMA(data, period) {
+    if (!data || data.length === 0) return [];
     const result = [];
     for (let i = 0; i < data.length; i++) {
         if (i < period - 1) { result.push(null); continue; }
@@ -90,6 +91,7 @@ function calcSMA(data, period) {
 }
 
 function calcRSI(closes, period = 14) {
+    if (!closes || closes.length === 0) return [];
     const result = new Array(closes.length).fill(null);
     if (closes.length < period + 1) return result;
     let gainSum = 0, lossSum = 0;
@@ -110,6 +112,7 @@ function calcRSI(closes, period = 14) {
 }
 
 function calcEMA(data, period) {
+    if (!data || data.length === 0) return [];
     const result = [];
     const k = 2 / (period + 1);
     let ema = data[0];
@@ -402,6 +405,15 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        // Handle preflight
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
 
         try {
             // Static routes

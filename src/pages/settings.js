@@ -22,7 +22,7 @@ function getSettingsPage() {
                 </div>
                 <div class="flex items-center justify-between py-2 border-b border-dark-800">
                     <span class="text-sm text-dark-300">Backend</span>
-                    <span class="text-sm text-white">Python FastAPI + yfinance</span>
+                    <span class="text-sm text-white">Node.js (Pure, tanpa dependencies)</span>
                 </div>
                 <div class="flex items-center justify-between py-2 border-b border-dark-800">
                     <span class="text-sm text-dark-300">Indikator Teknikal</span>

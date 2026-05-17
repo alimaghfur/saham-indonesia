@@ -94,7 +94,7 @@ async function getDashboardPage() {
 }
 
 function marketCard(idx) {
-    const isUp = idx.change >= 0;
+    const isUp = (idx.change || 0) >= 0;
     const color = isUp ? 'stat-up' : 'stat-down';
     const arrow = isUp ? 'fa-arrow-up' : 'fa-arrow-down';
     const bgGlow = isUp ? 'from-emerald-500/10 to-transparent' : 'from-red-500/10 to-transparent';
@@ -102,13 +102,13 @@ function marketCard(idx) {
     <div class="card p-5 relative overflow-hidden">
         <div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl ${bgGlow} rounded-bl-full"></div>
         <div class="flex items-center justify-between mb-2">
-            <span class="text-sm text-dark-400">${idx.name}</span>
+            <span class="text-sm text-dark-400">${idx.name || '-'}</span>
             <i class="fas fa-chart-line text-dark-500"></i>
         </div>
         <p class="text-xl font-bold text-white">${idx.price ? idx.price.toLocaleString('id-ID', {maximumFractionDigits: 2}) : '-'}</p>
         <div class="flex items-center gap-2 mt-1">
-            <span class="${color} text-sm font-medium"><i class="fas ${arrow} text-xs"></i> ${isUp ? '+' : ''}${idx.change}</span>
-            <span class="${color} text-xs">(${isUp ? '+' : ''}${idx.change_pct}%)</span>
+            <span class="${color} text-sm font-medium"><i class="fas ${arrow} text-xs"></i> ${isUp ? '+' : ''}${idx.change || 0}</span>
+            <span class="${color} text-xs">(${isUp ? '+' : ''}${idx.change_pct || 0}%)</span>
         </div>
     </div>`;
 }
