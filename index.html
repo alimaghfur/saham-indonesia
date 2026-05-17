@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SahamID - Analisa Saham Indonesia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
+                        dark: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' },
+                        success: '#10b981',
+                        danger: '#ef4444',
+                        warning: '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        .sidebar-item { transition: all 0.2s ease; }
+        .sidebar-item:hover { background: rgba(59, 130, 246, 0.1); }
+        .sidebar-item.active { background: rgba(59, 130, 246, 0.15); border-right: 3px solid #3b82f6; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; transition: all 0.2s ease; }
+        .card:hover { border-color: #475569; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .stat-up { color: #10b981; }
+        .stat-down { color: #ef4444; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .glass { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px); }
+        .gradient-border { background: linear-gradient(135deg, #3b82f6, #8b5cf6); padding: 1px; border-radius: 12px; }
+        .gradient-border > div { background: #1e293b; border-radius: 11px; }
+    </style>
+</head>
+<body class="bg-dark-950 text-dark-100 min-h-screen flex">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-dark-900 border-r border-dark-700 z-50 flex flex-col transition-transform duration-300">
+        <!-- Logo -->
+        <div class="p-5 border-b border-dark-700">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-chart-line text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-white">SahamID</h1>
+                    <p class="text-xs text-dark-400">Analisa Saham Pro</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 py-4 overflow-y-auto">
+            <div class="px-3 mb-2">
+                <p class="text-xs font-semibold text-dark-500 uppercase tracking-wider px-3 mb-2">Menu Utama</p>
+            </div>
+            <ul class="space-y-1 px-3">
+                <li><a href="#" onclick="navigateTo('dashboard')" class="sidebar-item active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="dashboard"><i class="fas fa-th-large w-5 text-center text-primary-400"></i><span>Dashboard</span></a></li>
+                <li><a href="#" onclick="navigateTo('screener')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="screener"><i class="fas fa-filter w-5 text-center text-dark-400"></i><span>Screener</span></a></li>
+                <li><a href="#" onclick="navigateTo('technical')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="technical"><i class="fas fa-chart-candlestick w-5 text-center text-dark-400"></i><span>Analisa Teknikal</span></a></li>
+                <li><a href="#" onclick="navigateTo('fundamental')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="fundamental"><i class="fas fa-file-invoice-dollar w-5 text-center text-dark-400"></i><span>Analisa Fundamental</span></a></li>
+                <li><a href="#" onclick="navigateTo('signals')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="signals"><i class="fas fa-bolt w-5 text-center text-dark-400"></i><span>Signal & Alert</span></a></li>
+            </ul>
+
+            <div class="px-3 mt-6 mb-2">
+                <p class="text-xs font-semibold text-dark-500 uppercase tracking-wider px-3 mb-2">Portfolio</p>
+            </div>
+            <ul class="space-y-1 px-3">
+                <li><a href="#" onclick="navigateTo('portfolio')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="portfolio"><i class="fas fa-briefcase w-5 text-center text-dark-400"></i><span>Portfolio</span></a></li>
+                <li><a href="#" onclick="navigateTo('watchlist')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="watchlist"><i class="fas fa-eye w-5 text-center text-dark-400"></i><span>Watchlist</span></a></li>
+                <li><a href="#" onclick="navigateTo('backtesting')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="backtesting"><i class="fas fa-flask w-5 text-center text-dark-400"></i><span>Backtesting</span></a></li>
+            </ul>
+
+            <div class="px-3 mt-6 mb-2">
+                <p class="text-xs font-semibold text-dark-500 uppercase tracking-wider px-3 mb-2">Informasi</p>
+            </div>
+            <ul class="space-y-1 px-3">
+                <li><a href="#" onclick="navigateTo('news')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="news"><i class="fas fa-newspaper w-5 text-center text-dark-400"></i><span>Berita & Sentimen</span></a></li>
+                <li><a href="#" onclick="navigateTo('heatmap')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="heatmap"><i class="fas fa-map w-5 text-center text-dark-400"></i><span>Heatmap</span></a></li>
+                <li><a href="#" onclick="navigateTo('settings')" class="sidebar-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm" data-page="settings"><i class="fas fa-cog w-5 text-center text-dark-400"></i><span>Pengaturan</span></a></li>
+            </ul>
+        </nav>
+
+        <!-- User -->
+        <div class="p-4 border-t border-dark-700">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-full flex items-center justify-center">
+                    <span class="text-sm font-bold text-white">A</span>
+                </div>
+                <div class="flex-1">
+                    <p class="text-sm font-medium text-white">Admin</p>
+                    <p class="text-xs text-dark-400">Pro Member</p>
+                </div>
+                <button class="text-dark-400 hover:text-white"><i class="fas fa-ellipsis-v"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="ml-64 flex-1 flex flex-col min-h-screen">
+        <!-- Header -->
+        <header class="sticky top-0 z-40 glass border-b border-dark-700 px-6 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <button onclick="toggleSidebar()" class="lg:hidden text-dark-400 hover:text-white">
+                        <i class="fas fa-bars text-lg"></i>
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <span class="pulse-dot w-2 h-2 bg-success rounded-full"></span>
+                        <span class="text-xs text-dark-400">Market Open</span>
+                    </div>
+                    <div class="hidden md:flex items-center gap-4 text-sm">
+                        <span class="text-dark-300">IHSG</span>
+                        <span class="font-semibold text-white">7,432.15</span>
+                        <span class="stat-up text-xs">+1.24%</span>
+                        <span class="text-dark-600">|</span>
+                        <span class="text-dark-300">LQ45</span>
+                        <span class="font-semibold text-white">982.30</span>
+                        <span class="stat-up text-xs">+0.87%</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <input type="text" placeholder="Cari saham..." class="bg-dark-800 border border-dark-600 rounded-lg px-4 py-2 text-sm w-64 focus:outline-none focus:border-primary-500 text-white placeholder-dark-500">
+                        <i class="fas fa-search absolute right-3 top-2.5 text-dark-500"></i>
+                    </div>
+                    <button class="relative p-2 text-dark-400 hover:text-white">
+                        <i class="fas fa-bell"></i>
+                        <span class="absolute -top-0.5 -right-0.5 w-4 h-4 bg-danger rounded-full text-[10px] flex items-center justify-center text-white">3</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <div id="page-content" class="flex-1 p-6 fade-in">
+            <!-- Dashboard will be loaded here -->
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="src/pages/dashboard.js"></script>
+    <script src="src/pages/screener.js"></script>
+    <script src="src/pages/technical.js"></script>
+    <script src="src/pages/fundamental.js"></script>
+    <script src="src/pages/signals.js"></script>
+    <script src="src/pages/portfolio.js"></script>
+    <script src="src/pages/watchlist.js"></script>
+    <script src="src/pages/backtesting.js"></script>
+    <script src="src/pages/news.js"></script>
+    <script src="src/pages/heatmap.js"></script>
+    <script src="src/pages/settings.js"></script>
+    <script src="src/app.js"></script>
+</body>
+</html>
