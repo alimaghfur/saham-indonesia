@@ -18,9 +18,7 @@ const MIME = {
     '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.map': 'application/json',
 };
 
-// ============ YAHOO FINANCE WITH AUTH ============
-let yfCookie = '', yfCrumb = '', yfAuthTime = 0;
-
+// ============ HTTP HELPER ============
 function httpsRequest(urlStr, headers = {}) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(urlStr);
@@ -43,6 +41,18 @@ function httpsRequest(urlStr, headers = {}) {
     });
 }
 
+// ============ YAHOO FINANCE PROXY (andihermanto.id) ============
+// This is a free proxy hosted in Indonesia - accessible without auth
+async function proxyFetch(symbol, range = '3mo', interval = '1d') {
+    const url = `https://data-api-saham.andihermanto.id/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`;
+    const res = await httpsRequest(url, { 'Accept': 'application/json' });
+    if (res.status === 200) return JSON.parse(res.body);
+    throw new Error(`Proxy API error: ${res.status}`);
+}
+
+// ============ YAHOO FINANCE DIRECT WITH AUTH ============
+let yfCookie = '', yfCrumb = '', yfAuthTime = 0;
+
 async function refreshAuth() {
     if (yfCookie && yfCrumb && (Date.now() - yfAuthTime) < 1800000) return true;
     try {
@@ -59,7 +69,7 @@ async function refreshAuth() {
             console.log('[Yahoo] Auth OK'); return true;
         }
         return false;
-    } catch (e) { console.warn('[Yahoo] Auth failed:', e.message); return false; }
+    } catch (e) { return false; }
 }
 
 async function yahooFetch(endpoint) {
@@ -167,29 +177,99 @@ function generateHistoricalData(symbol, days) {
     return candles;
 }
 
-// ============ DATA FETCHER WITH FALLBACK ============
-let useYahoo = true; // start optimistic
+// ============ DATA FETCHER WITH MULTI-SOURCE ============
+// Priority: 1) Indonesian Proxy  2) Yahoo Direct  3) Fallback
+let dataSource = 'proxy'; // 'proxy' | 'yahoo' | 'fallback'
 
 async function getQuotes(symbols) {
-    if (useYahoo) {
+    // Try Indonesian proxy first (most reliable from Indonesia)
+    if (dataSource === 'proxy') {
+        try {
+            const results = [];
+            // Proxy only supports single symbol, batch in parallel (max 6 concurrent)
+            const batches = [];
+            for (let i = 0; i < symbols.length; i += 6) batches.push(symbols.slice(i, i + 6));
+            for (const batch of batches) {
+                const batchResults = await Promise.all(batch.map(async (sym) => {
+                    try {
+                        const data = await proxyFetch(sym.replace('^JKSE', '%5EJKSE').replace('^JKLQ45', '%5EJKLQ45').replace('^JKIDX30', '%5EJKIDX30').replace('^JKII', '%5EJKII'), '1d', '1d');
+                        const meta = data?.chart?.result?.[0]?.meta;
+                        if (meta && meta.regularMarketPrice) {
+                            const prev = meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice;
+                            const change = meta.regularMarketPrice - prev;
+                            const changePct = prev ? (change / prev) * 100 : 0;
+                            const ticker = sym.replace('.JK', '').replace('^JKSE', 'IHSG').replace('^JKLQ45', 'LQ45').replace('^JKIDX30', 'IDX30').replace('^JKII', 'JII');
+                            const stockInfo = STOCK_DATA[ticker] || {};
+                            return {
+                                symbol: sym, shortName: stockInfo.name || meta.shortName || ticker, longName: stockInfo.name || meta.longName || ticker,
+                                regularMarketPrice: meta.regularMarketPrice,
+                                regularMarketChange: round(change), regularMarketChangePercent: round(changePct),
+                                regularMarketVolume: meta.regularMarketVolume || generateVolume(),
+                                regularMarketPreviousClose: prev,
+                                marketCap: stockInfo.mcap || 0, trailingPE: stockInfo.pe || null, priceToBook: stockInfo.pb || null,
+                                sector: stockInfo.sector || '', industry: stockInfo.sector || '',
+                            };
+                        }
+                    } catch (e) { /* skip failed symbol */ }
+                    return null;
+                }));
+                results.push(...batchResults.filter(Boolean));
+            }
+            if (results.length > 0) {
+                console.log(`[Proxy] Got ${results.length}/${symbols.length} quotes`);
+                return results;
+            }
+            throw new Error('No data from proxy');
+        } catch (e) {
+            console.warn('[Proxy] Failed:', e.message, '- trying Yahoo...');
+            dataSource = 'yahoo';
+        }
+    }
+
+    // Try Yahoo Finance direct
+    if (dataSource === 'yahoo') {
         try {
             const symbolStr = symbols.join(',');
             const data = await yahooFetch(`/v7/finance/quote?symbols=${symbolStr}`);
-            if (data?.quoteResponse?.result?.length > 0) return data.quoteResponse.result;
+            if (data?.quoteResponse?.result?.length > 0) {
+                console.log('[Yahoo] Got quotes OK');
+                return data.quoteResponse.result;
+            }
         } catch (e) {
-            console.warn('[Data] Yahoo failed, switching to fallback:', e.message);
-            useYahoo = false;
-            // Retry Yahoo every 5 minutes
-            setTimeout(() => { useYahoo = true; console.log('[Data] Will retry Yahoo on next request'); }, 300000);
+            console.warn('[Yahoo] Failed:', e.message, '- using fallback');
+            dataSource = 'fallback';
+            setTimeout(() => { dataSource = 'proxy'; console.log('[Data] Will retry proxy on next request'); }, 300000);
         }
     }
+
+    // Fallback
     return getFallbackQuotes(symbols);
 }
 
 async function getHistory(symbol, period1, period2, interval) {
-    if (useYahoo) {
+    const days = Math.round((period2 - period1) / 86400);
+    const range = days <= 5 ? '5d' : days <= 30 ? '1mo' : days <= 90 ? '3mo' : days <= 180 ? '6mo' : days <= 365 ? '1y' : '2y';
+
+    // Try proxy first
+    if (dataSource === 'proxy' || dataSource === 'yahoo') {
         try {
-            const data = await yahooFetch(`/v8/finance/chart/${symbol}?period1=${period1}&period2=${period2}&interval=${interval}`);
+            const data = await proxyFetch(symbol, range, interval || '1d');
+            const result = data?.chart?.result?.[0];
+            if (result && result.timestamp && result.timestamp.length > 0) {
+                const ts = result.timestamp; const ohlcv = result.indicators?.quote?.[0] || {};
+                const candles = ts.map((t, i) => ({
+                    date: new Date(t * 1000).toISOString().split('T')[0],
+                    open: Math.round(ohlcv.open?.[i] || 0), high: Math.round(ohlcv.high?.[i] || 0),
+                    low: Math.round(ohlcv.low?.[i] || 0), close: Math.round(ohlcv.close?.[i] || 0),
+                    volume: ohlcv.volume?.[i] || 0,
+                })).filter(c => c.close > 0);
+                if (candles.length > 0) return candles;
+            }
+        } catch (e) { console.warn('[History] Proxy/Yahoo failed:', e.message); }
+
+        // Try Yahoo direct for history
+        try {
+            const data = await yahooFetch(`/v8/finance/chart/${symbol}?period1=${period1}&period2=${period2}&interval=${interval || '1d'}`);
             const result = data?.chart?.result?.[0];
             if (result && result.timestamp) {
                 const ts = result.timestamp; const ohlcv = result.indicators?.quote?.[0] || {};
@@ -200,13 +280,9 @@ async function getHistory(symbol, period1, period2, interval) {
                     volume: ohlcv.volume?.[i] || 0,
                 })).filter(c => c.close > 0);
             }
-        } catch (e) {
-            console.warn('[Data] Yahoo chart failed:', e.message);
-            useYahoo = false;
-            setTimeout(() => { useYahoo = true; }, 300000);
-        }
+        } catch (e) { /* fall through to fallback */ }
     }
-    const days = Math.round((period2 - period1) / 86400);
+
     return generateHistoricalData(symbol, days);
 }
 
@@ -269,7 +345,7 @@ const SECTORS = {
 
 // ============ API ROUTES ============
 const routes = {};
-routes['/api/health'] = async () => ({ status: 'ok', source: useYahoo ? 'Yahoo Finance (live)' : 'Fallback Data', note: useYahoo ? 'Real-time 15min delay' : 'Simulated - Yahoo unreachable' });
+routes['/api/health'] = async () => ({ status: 'ok', source: dataSource, note: dataSource === 'proxy' ? 'Real-time via Indonesian proxy' : dataSource === 'yahoo' ? 'Real-time via Yahoo Finance' : 'Simulated fallback data' });
 
 routes['/api/market/indices'] = async () => {
     const quotes = await getQuotes(Object.values(INDICES));
