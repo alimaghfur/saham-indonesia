@@ -31,36 +31,99 @@ const MIME = {
     '.map': 'application/json',
 };
 
-// Yahoo Finance API helper
-function yahooFetch(endpoint) {
+// Yahoo Finance API helper with cookie/crumb authentication
+let yfCookie = '';
+let yfCrumb = '';
+let yfAuthTime = 0;
+
+function httpsGet(hostname, path, headers = {}) {
     return new Promise((resolve, reject) => {
         const options = {
-            hostname: 'query1.finance.yahoo.com',
-            path: endpoint,
+            hostname,
+            path,
             method: 'GET',
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                ...headers,
             },
         };
         const req = https.request(options, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                try {
-                    resolve(JSON.parse(data));
-                } catch (e) {
-                    reject(new Error(`Parse error: ${data.substring(0, 200)}`));
-                }
-            });
+            res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, body: data }));
         });
         req.on('error', (e) => {
             console.warn(`Yahoo API unreachable: ${e.message}. Make sure server has internet access.`);
             reject(e);
         });
-        req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout - pastikan server terhubung ke internet')); });
+        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout - pastikan server terhubung ke internet')); });
         req.end();
     });
+}
+
+async function refreshYahooAuth() {
+    // Refresh every 30 minutes
+    if (yfCookie && yfCrumb && (Date.now() - yfAuthTime) < 1800000) return;
+    
+    try {
+        // Step 1: Get cookie from Yahoo Finance page
+        const pageRes = await httpsGet('finance.yahoo.com', '/quote/BBCA.JK');
+        const setCookies = pageRes.headers['set-cookie'] || [];
+        const cookies = setCookies.map(c => c.split(';')[0]).join('; ');
+        
+        if (cookies) {
+            yfCookie = cookies;
+            // Step 2: Get crumb using cookie
+            const crumbRes = await httpsGet('query2.finance.yahoo.com', '/v1/test/getcrumb', {
+                'Cookie': yfCookie,
+            });
+            if (crumbRes.statusCode === 200 && crumbRes.body && !crumbRes.body.includes('<')) {
+                yfCrumb = crumbRes.body.trim();
+                yfAuthTime = Date.now();
+                console.log('Yahoo Finance auth refreshed successfully');
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to get Yahoo auth:', e.message);
+    }
+    
+    // Reset on failure
+    yfCookie = '';
+    yfCrumb = '';
+}
+
+async function yahooFetch(endpoint) {
+    await refreshYahooAuth();
+    
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const url = yfCrumb ? `${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}` : endpoint;
+    
+    const headers = { 'Accept': 'application/json' };
+    if (yfCookie) headers['Cookie'] = yfCookie;
+    
+    const res = await httpsGet('query1.finance.yahoo.com', url, headers);
+    
+    if (res.statusCode === 401 || res.statusCode === 403) {
+        // Auth expired, retry once
+        yfAuthTime = 0;
+        await refreshYahooAuth();
+        const retryUrl = yfCrumb ? `${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}` : endpoint;
+        const retryHeaders = { 'Accept': 'application/json' };
+        if (yfCookie) retryHeaders['Cookie'] = yfCookie;
+        const retryRes = await httpsGet('query1.finance.yahoo.com', retryUrl, retryHeaders);
+        try {
+            return JSON.parse(retryRes.body);
+        } catch (e) {
+            throw new Error(`Parse error after retry: ${retryRes.body.substring(0, 200)}`);
+        }
+    }
+    
+    try {
+        return JSON.parse(res.body);
+    } catch (e) {
+        throw new Error(`Parse error: ${res.body.substring(0, 200)}`);
+    }
 }
 
 // Get quote data for multiple symbols
