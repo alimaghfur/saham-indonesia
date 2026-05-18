@@ -13,7 +13,17 @@ const path = require('path');
 const { URL } = require('url');
 
 const PORT = process.env.PORT || 8000;
-const API_KEY = process.env.TWELVE_DATA_KEY || 'demo';
+// Baca API key dari: 1) environment variable, 2) file .env, 3) hardcode di bawah
+let API_KEY = process.env.TWELVE_DATA_KEY || '';
+if (!API_KEY) {
+    try {
+        const envFile = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+        const match = envFile.match(/TWELVE_DATA_KEY=(.+)/);
+        if (match) API_KEY = match[1].trim();
+    } catch (e) {}
+}
+if (!API_KEY) API_KEY = 'demo';
+
 
 const MIME = {
     '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
