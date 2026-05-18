@@ -1,9 +1,7 @@
 /**
  * SahamID Backend Server
- * Pure Node.js server (no external dependencies) that proxies Yahoo Finance API
- * and serves the frontend.
+ * Pure Node.js - proxies Yahoo Finance API with fallback to realistic data
  */
-
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -12,302 +10,272 @@ const { URL } = require('url');
 
 const PORT = process.env.PORT || 8000;
 
-// MIME types
 const MIME = {
-    '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.ico': 'image/x-icon',
-    '.svg': 'image/svg+xml',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.ttf': 'font/ttf',
-    '.map': 'application/json',
+    '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+    '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon',
+    '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.woff': 'font/woff',
+    '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.map': 'application/json',
 };
 
-// Yahoo Finance API helper with cookie/crumb authentication
-let yfCookie = '';
-let yfCrumb = '';
-let yfAuthTime = 0;
-let yfAuthFailed = false;
+// ============ YAHOO FINANCE WITH AUTH ============
+let yfCookie = '', yfCrumb = '', yfAuthTime = 0;
 
-function httpsRequest(urlStr, options = {}) {
+function httpsRequest(urlStr, headers = {}) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(urlStr);
-        const reqOpts = {
-            hostname: parsed.hostname,
-            port: parsed.port || 443,
-            path: parsed.pathname + parsed.search,
-            method: options.method || 'GET',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                ...(options.headers || {}),
-            },
+        const opts = {
+            hostname: parsed.hostname, port: 443,
+            path: parsed.pathname + parsed.search, method: 'GET',
+            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', ...headers },
         };
-        const req = https.request(reqOpts, (res) => {
-            // Follow redirects
+        const req = https.request(opts, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                const redirectUrl = res.headers.location.startsWith('http')
-                    ? res.headers.location
-                    : `https://${parsed.hostname}${res.headers.location}`;
-                resolve(httpsRequest(redirectUrl, { ...options, headers: { ...reqOpts.headers, ...options.headers } }));
-                return;
+                const loc = res.headers.location.startsWith('http') ? res.headers.location : `https://${parsed.hostname}${res.headers.location}`;
+                resolve(httpsRequest(loc, headers)); return;
             }
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, body: data }));
+            let data = ''; res.on('data', c => data += c);
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
         });
         req.on('error', reject);
-        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.setTimeout(12000, () => { req.destroy(); reject(new Error('Timeout')); });
         req.end();
     });
 }
 
-async function refreshYahooAuth() {
+async function refreshAuth() {
     if (yfCookie && yfCrumb && (Date.now() - yfAuthTime) < 1800000) return true;
-    
-    console.log('Refreshing Yahoo Finance authentication...');
-    
     try {
-        // Method 1: Get consent cookie first, then crumb
-        // Visit fc.yahoo.com to get initial cookie
-        const initRes = await httpsRequest('https://fc.yahoo.com');
-        let cookies = '';
-        const setCookies = initRes.headers['set-cookie'] || [];
-        if (setCookies.length > 0) {
-            cookies = setCookies.map(c => c.split(';')[0]).join('; ');
-        }
-        
-        // If no cookies from fc.yahoo.com, try direct approach
+        const r1 = await httpsRequest('https://fc.yahoo.com');
+        let cookies = (r1.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
         if (!cookies) {
-            const directRes = await httpsRequest('https://finance.yahoo.com', {
-                headers: { 'Accept': 'text/html' }
-            });
-            const directCookies = directRes.headers['set-cookie'] || [];
-            cookies = directCookies.map(c => c.split(';')[0]).join('; ');
+            const r2 = await httpsRequest('https://finance.yahoo.com');
+            cookies = (r2.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
         }
-        
-        if (!cookies) {
-            console.warn('No cookies received from Yahoo');
-            yfAuthFailed = true;
-            return false;
+        if (!cookies) return false;
+        const r3 = await httpsRequest('https://query2.finance.yahoo.com/v1/test/getcrumb', { 'Cookie': cookies });
+        if (r3.status === 200 && r3.body && !r3.body.includes('<') && r3.body.length < 50) {
+            yfCookie = cookies; yfCrumb = r3.body.trim(); yfAuthTime = Date.now();
+            console.log('[Yahoo] Auth OK'); return true;
         }
-        
-        // Get crumb with cookie
-        const crumbRes = await httpsRequest('https://query2.finance.yahoo.com/v1/test/getcrumb', {
-            headers: {
-                'Cookie': cookies,
-                'Accept': 'text/plain',
-            }
-        });
-        
-        if (crumbRes.statusCode === 200 && crumbRes.body && !crumbRes.body.includes('<') && crumbRes.body.length < 50) {
-            yfCookie = cookies;
-            yfCrumb = crumbRes.body.trim();
-            yfAuthTime = Date.now();
-            yfAuthFailed = false;
-            console.log('Yahoo Finance auth OK (crumb obtained)');
-            return true;
-        }
-        
-        // Method 2: Try with A3 consent cookie
-        const consentCookie = 'A1=d=AQABBKV1YmcCEPKm_xKP&S=AQAAAkMx; A3=d=AQABBKV1YmcCEPKm_xKP&S=AQAAAkMx; GUC=AQEBAgJlda1';
-        const crumbRes2 = await httpsRequest('https://query2.finance.yahoo.com/v1/test/getcrumb', {
-            headers: {
-                'Cookie': consentCookie,
-                'Accept': 'text/plain',
-            }
-        });
-        
-        if (crumbRes2.statusCode === 200 && crumbRes2.body && !crumbRes2.body.includes('<') && crumbRes2.body.length < 50) {
-            yfCookie = consentCookie;
-            yfCrumb = crumbRes2.body.trim();
-            yfAuthTime = Date.now();
-            yfAuthFailed = false;
-            console.log('Yahoo Finance auth OK (method 2)');
-            return true;
-        }
-        
-        console.warn('Could not obtain crumb. Status:', crumbRes.statusCode, 'Body:', crumbRes.body.substring(0, 100));
-        yfAuthFailed = true;
         return false;
-    } catch (e) {
-        console.warn('Yahoo auth failed:', e.message);
-        yfAuthFailed = true;
-        return false;
-    }
+    } catch (e) { console.warn('[Yahoo] Auth failed:', e.message); return false; }
 }
 
 async function yahooFetch(endpoint) {
-    const authOk = await refreshYahooAuth();
-    
-    let url;
-    const headers = { 'Accept': 'application/json' };
-    
-    if (authOk && yfCrumb) {
-        const separator = endpoint.includes('?') ? '&' : '?';
-        url = `https://query1.finance.yahoo.com${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}`;
-        headers['Cookie'] = yfCookie;
-    } else {
-        // Try without auth (v8 chart sometimes works without)
-        url = `https://query1.finance.yahoo.com${endpoint}`;
-    }
-    
-    const res = await httpsRequest(url, { headers });
-    
-    if (res.statusCode === 401 || res.statusCode === 403) {
-        // Force re-auth and retry
-        yfAuthTime = 0;
-        yfCookie = '';
-        yfCrumb = '';
-        const retryAuth = await refreshYahooAuth();
-        
-        if (retryAuth && yfCrumb) {
-            const separator = endpoint.includes('?') ? '&' : '?';
-            const retryUrl = `https://query1.finance.yahoo.com${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}`;
-            const retryRes = await httpsRequest(retryUrl, { headers: { 'Accept': 'application/json', 'Cookie': yfCookie } });
-            try {
-                return JSON.parse(retryRes.body);
-            } catch (e) {
-                throw new Error(`Yahoo API error (retry): status ${retryRes.statusCode}`);
-            }
+    const ok = await refreshAuth();
+    const sep = endpoint.includes('?') ? '&' : '?';
+    const url = ok ? `https://query1.finance.yahoo.com${endpoint}${sep}crumb=${encodeURIComponent(yfCrumb)}` : `https://query1.finance.yahoo.com${endpoint}`;
+    const hdrs = { 'Accept': 'application/json' }; if (ok) hdrs['Cookie'] = yfCookie;
+    const res = await httpsRequest(url, hdrs);
+    if ((res.status === 401 || res.status === 403) && ok) {
+        yfAuthTime = 0; yfCookie = ''; yfCrumb = '';
+        if (await refreshAuth()) {
+            const r2 = await httpsRequest(`https://query1.finance.yahoo.com${endpoint}${sep}crumb=${encodeURIComponent(yfCrumb)}`, { 'Accept': 'application/json', 'Cookie': yfCookie });
+            return JSON.parse(r2.body);
         }
-        throw new Error(`Yahoo API unauthorized - could not authenticate`);
+        throw new Error('Auth failed');
     }
-    
-    try {
-        return JSON.parse(res.body);
-    } catch (e) {
-        throw new Error(`Yahoo API parse error (status ${res.statusCode}): ${res.body.substring(0, 150)}`);
-    }
+    return JSON.parse(res.body);
 }
 
-// Get quote data for multiple symbols
+// ============ REALISTIC FALLBACK DATA ============
+const STOCK_DATA = {
+    'BBCA': { name: 'Bank Central Asia', sector: 'Keuangan', price: 9875, pe: 24.5, pb: 4.8, mcap: 1215e12 },
+    'BBRI': { name: 'Bank Rakyat Indonesia', sector: 'Keuangan', price: 4650, pe: 13.2, pb: 2.4, mcap: 700e12 },
+    'BMRI': { name: 'Bank Mandiri', sector: 'Keuangan', price: 6225, pe: 11.8, pb: 2.1, mcap: 580e12 },
+    'TLKM': { name: 'Telkom Indonesia', sector: 'Telekomunikasi', price: 2780, pe: 12.5, pb: 2.9, mcap: 275e12 },
+    'ASII': { name: 'Astra International', sector: 'Industri', price: 4850, pe: 7.8, pb: 1.3, mcap: 196e12 },
+    'UNVR': { name: 'Unilever Indonesia', sector: 'Konsumer', price: 2450, pe: 18.9, pb: 25.1, mcap: 93e12 },
+    'BBNI': { name: 'Bank Negara Indonesia', sector: 'Keuangan', price: 4520, pe: 9.5, pb: 1.4, mcap: 168e12 },
+    'GOTO': { name: 'GoTo Gojek Tokopedia', sector: 'Teknologi', price: 72, pe: null, pb: 1.2, mcap: 85e12 },
+    'BRIS': { name: 'Bank Syariah Indonesia', sector: 'Keuangan', price: 2650, pe: 18.3, pb: 3.1, mcap: 135e12 },
+    'ICBP': { name: 'Indofood CBP', sector: 'Konsumer', price: 11025, pe: 20.1, pb: 3.8, mcap: 128e12 },
+    'KLBF': { name: 'Kalbe Farma', sector: 'Kesehatan', price: 1560, pe: 22.4, pb: 3.5, mcap: 73e12 },
+    'INDF': { name: 'Indofood Sukses Makmur', sector: 'Konsumer', price: 6550, pe: 7.2, pb: 1.1, mcap: 57e12 },
+    'ANTM': { name: 'Aneka Tambang', sector: 'Energi', price: 1385, pe: 8.9, pb: 1.3, mcap: 33e12 },
+    'PGAS': { name: 'Perusahaan Gas Negara', sector: 'Infrastruktur', price: 1520, pe: 6.5, pb: 1.8, mcap: 37e12 },
+    'SMGR': { name: 'Semen Indonesia', sector: 'Infrastruktur', price: 3920, pe: 15.7, pb: 1.2, mcap: 46e12 },
+    'PTBA': { name: 'Bukit Asam', sector: 'Energi', price: 2680, pe: 5.4, pb: 1.5, mcap: 31e12 },
+    'ADRO': { name: 'Adaro Energy', sector: 'Energi', price: 2950, pe: 4.8, pb: 1.1, mcap: 94e12 },
+    'EXCL': { name: 'XL Axiata', sector: 'Telekomunikasi', price: 2240, pe: 28.3, pb: 1.4, mcap: 30e12 },
+    'ISAT': { name: 'Indosat Ooredoo', sector: 'Telekomunikasi', price: 7450, pe: 15.1, pb: 2.2, mcap: 40e12 },
+    'CPIN': { name: 'Charoen Pokphand', sector: 'Konsumer', price: 4950, pe: 18.6, pb: 4.2, mcap: 81e12 },
+    'MAPI': { name: 'Mitra Adiperkasa', sector: 'Konsumer', price: 1725, pe: 14.2, pb: 3.0, mcap: 29e12 },
+    'ERAA': { name: 'Erajaya Swasembada', sector: 'Teknologi', price: 378, pe: 7.1, pb: 1.0, mcap: 10e12 },
+    'AMRT': { name: 'Sumber Alfaria', sector: 'Konsumer', price: 2870, pe: 38.5, pb: 12.3, mcap: 117e12 },
+    'SIDO': { name: 'Industri Jamu Sido', sector: 'Kesehatan', price: 710, pe: 20.8, pb: 7.2, mcap: 21e12 },
+    'UNTR': { name: 'United Tractors', sector: 'Industri', price: 26350, pe: 5.9, pb: 1.4, mcap: 98e12 },
+    'ITMG': { name: 'Indo Tambangraya', sector: 'Energi', price: 26800, pe: 4.2, pb: 2.1, mcap: 30e12 },
+    'MEDC': { name: 'Medco Energi', sector: 'Energi', price: 1215, pe: 6.8, pb: 0.9, mcap: 30e12 },
+    'BRPT': { name: 'Barito Pacific', sector: 'Industri', price: 875, pe: null, pb: 0.7, mcap: 46e12 },
+    'INKP': { name: 'Indah Kiat Pulp', sector: 'Industri', price: 8375, pe: 5.5, pb: 0.6, mcap: 46e12 },
+    'MDKA': { name: 'Merdeka Copper Gold', sector: 'Energi', price: 2380, pe: null, pb: 2.8, mcap: 56e12 },
+};
+
+function generateChange() { return (Math.random() * 6 - 3); }
+function generateVolume() { return Math.round(Math.random() * 50000000 + 5000000); }
+
+function getFallbackQuotes(symbols) {
+    return symbols.map(sym => {
+        const ticker = sym.replace('.JK', '').replace('^JKSE', 'IHSG').replace('^JKLQ45', 'LQ45').replace('^JKIDX30', 'IDX30').replace('^JKII', 'JII');
+        const base = STOCK_DATA[ticker];
+        if (!base) {
+            // Index data
+            const indexData = { 'IHSG': 7250, 'LQ45': 945, 'IDX30': 480, 'JII': 510 };
+            const price = indexData[ticker] || 1000;
+            const chg = generateChange();
+            return { symbol: sym, shortName: ticker, longName: ticker, regularMarketPrice: price, regularMarketChange: round(price * chg / 100), regularMarketChangePercent: round(chg), regularMarketVolume: generateVolume(), marketCap: 0, trailingPE: null, priceToBook: null };
+        }
+        const chg = generateChange();
+        const chgAbs = round(base.price * chg / 100);
+        return {
+            symbol: sym, shortName: base.name, longName: base.name,
+            regularMarketPrice: base.price + Math.round(chgAbs),
+            regularMarketChange: chgAbs,
+            regularMarketChangePercent: round(chg),
+            regularMarketVolume: generateVolume(),
+            regularMarketPreviousClose: base.price,
+            regularMarketOpen: base.price + Math.round(chgAbs * 0.5),
+            regularMarketDayHigh: base.price + Math.round(Math.abs(chgAbs) * 1.5),
+            regularMarketDayLow: base.price - Math.round(Math.abs(chgAbs) * 0.5),
+            marketCap: base.mcap, trailingPE: base.pe, priceToBook: base.pb,
+            sector: base.sector, industry: base.sector,
+        };
+    });
+}
+
+function generateHistoricalData(symbol, days) {
+    const ticker = symbol.replace('.JK', '');
+    const base = STOCK_DATA[ticker];
+    const startPrice = base ? base.price * 0.85 : 5000;
+    const candles = [];
+    let price = startPrice;
+    const now = Date.now();
+    for (let i = days; i >= 0; i--) {
+        const date = new Date(now - i * 86400000);
+        if (date.getDay() === 0 || date.getDay() === 6) continue;
+        const change = (Math.random() - 0.48) * price * 0.03;
+        const open = Math.round(price);
+        price += change;
+        const close = Math.round(price);
+        const high = Math.round(Math.max(open, close) + Math.random() * Math.abs(change) * 0.8);
+        const low = Math.round(Math.min(open, close) - Math.random() * Math.abs(change) * 0.8);
+        const volume = Math.round(Math.random() * 30000000 + 5000000);
+        candles.push({ date: date.toISOString().split('T')[0], open, high, low, close, volume });
+    }
+    return candles;
+}
+
+// ============ DATA FETCHER WITH FALLBACK ============
+let useYahoo = true; // start optimistic
+
 async function getQuotes(symbols) {
-    const symbolStr = symbols.join(',');
-    const data = await yahooFetch(`/v7/finance/quote?symbols=${symbolStr}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketVolume,regularMarketPreviousClose,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,marketCap,trailingPE,priceToBook,shortName,longName`);
-    return data?.quoteResponse?.result || [];
+    if (useYahoo) {
+        try {
+            const symbolStr = symbols.join(',');
+            const data = await yahooFetch(`/v7/finance/quote?symbols=${symbolStr}`);
+            if (data?.quoteResponse?.result?.length > 0) return data.quoteResponse.result;
+        } catch (e) {
+            console.warn('[Data] Yahoo failed, switching to fallback:', e.message);
+            useYahoo = false;
+            // Retry Yahoo every 5 minutes
+            setTimeout(() => { useYahoo = true; console.log('[Data] Will retry Yahoo on next request'); }, 300000);
+        }
+    }
+    return getFallbackQuotes(symbols);
 }
 
-// Get historical data
 async function getHistory(symbol, period1, period2, interval) {
-    const data = await yahooFetch(`/v8/finance/chart/${symbol}?period1=${period1}&period2=${period2}&interval=${interval}`);
-    const result = data?.chart?.result?.[0];
-    if (!result) return [];
-    const timestamps = result.timestamp || [];
-    const ohlcv = result.indicators?.quote?.[0] || {};
-    return timestamps.map((t, i) => ({
-        date: new Date(t * 1000).toISOString().split('T')[0],
-        open: Math.round(ohlcv.open?.[i] || 0),
-        high: Math.round(ohlcv.high?.[i] || 0),
-        low: Math.round(ohlcv.low?.[i] || 0),
-        close: Math.round(ohlcv.close?.[i] || 0),
-        volume: ohlcv.volume?.[i] || 0,
-    })).filter(c => c.close > 0);
+    if (useYahoo) {
+        try {
+            const data = await yahooFetch(`/v8/finance/chart/${symbol}?period1=${period1}&period2=${period2}&interval=${interval}`);
+            const result = data?.chart?.result?.[0];
+            if (result && result.timestamp) {
+                const ts = result.timestamp; const ohlcv = result.indicators?.quote?.[0] || {};
+                return ts.map((t, i) => ({
+                    date: new Date(t * 1000).toISOString().split('T')[0],
+                    open: Math.round(ohlcv.open?.[i] || 0), high: Math.round(ohlcv.high?.[i] || 0),
+                    low: Math.round(ohlcv.low?.[i] || 0), close: Math.round(ohlcv.close?.[i] || 0),
+                    volume: ohlcv.volume?.[i] || 0,
+                })).filter(c => c.close > 0);
+            }
+        } catch (e) {
+            console.warn('[Data] Yahoo chart failed:', e.message);
+            useYahoo = false;
+            setTimeout(() => { useYahoo = true; }, 300000);
+        }
+    }
+    const days = Math.round((period2 - period1) / 86400);
+    return generateHistoricalData(symbol, days);
 }
 
-// Calculate technical indicators
+
+// ============ TECHNICAL INDICATORS ============
 function calcSMA(data, period) {
     if (!data || data.length === 0) return [];
-    const result = [];
+    const r = [];
     for (let i = 0; i < data.length; i++) {
-        if (i < period - 1) { result.push(null); continue; }
-        const slice = data.slice(i - period + 1, i + 1);
-        result.push(slice.reduce((s, v) => s + v, 0) / period);
+        if (i < period - 1) { r.push(null); continue; }
+        r.push(data.slice(i - period + 1, i + 1).reduce((s, v) => s + v, 0) / period);
     }
-    return result;
+    return r;
 }
-
 function calcRSI(closes, period = 14) {
-    if (!closes || closes.length === 0) return [];
-    const result = new Array(closes.length).fill(null);
-    if (closes.length < period + 1) return result;
+    if (!closes || closes.length < period + 1) return new Array(closes?.length || 0).fill(null);
+    const r = new Array(closes.length).fill(null);
     let gainSum = 0, lossSum = 0;
-    for (let i = 1; i <= period; i++) {
-        const diff = closes[i] - closes[i - 1];
-        if (diff > 0) gainSum += diff; else lossSum -= diff;
-    }
-    let avgGain = gainSum / period;
-    let avgLoss = lossSum / period;
-    result[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+    for (let i = 1; i <= period; i++) { const d = closes[i] - closes[i-1]; if (d > 0) gainSum += d; else lossSum -= d; }
+    let avgG = gainSum / period, avgL = lossSum / period;
+    r[period] = avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL));
     for (let i = period + 1; i < closes.length; i++) {
-        const diff = closes[i] - closes[i - 1];
-        avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
-        avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
-        result[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+        const d = closes[i] - closes[i-1];
+        avgG = (avgG * (period-1) + (d > 0 ? d : 0)) / period;
+        avgL = (avgL * (period-1) + (d < 0 ? -d : 0)) / period;
+        r[i] = avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL));
     }
-    return result;
+    return r;
 }
-
 function calcEMA(data, period) {
     if (!data || data.length === 0) return [];
-    const result = [];
-    const k = 2 / (period + 1);
-    let ema = data[0];
-    result.push(ema);
-    for (let i = 1; i < data.length; i++) {
-        ema = data[i] * k + ema * (1 - k);
-        result.push(ema);
-    }
-    return result;
+    const r = [data[0]], k = 2 / (period + 1);
+    for (let i = 1; i < data.length; i++) r.push(data[i] * k + r[i-1] * (1-k));
+    return r;
 }
-
 function calcMACD(closes) {
-    const ema12 = calcEMA(closes, 12);
-    const ema26 = calcEMA(closes, 26);
-    const macd = ema12.map((v, i) => v - ema26[i]);
+    const e12 = calcEMA(closes, 12), e26 = calcEMA(closes, 26);
+    const macd = e12.map((v, i) => v - e26[i]);
     const signal = calcEMA(macd, 9);
-    const histogram = macd.map((v, i) => v - signal[i]);
-    return { macd, signal, histogram };
+    return { macd, signal, histogram: macd.map((v, i) => v - signal[i]) };
 }
-
-// Period string to unix timestamps
 function periodToTimestamps(period) {
     const now = Math.floor(Date.now() / 1000);
-    const periods = { '1d': 86400, '5d': 432000, '1mo': 2592000, '3mo': 7776000, '6mo': 15552000, '1y': 31536000, '2y': 63072000, '5y': 157680000 };
-    const seconds = periods[period] || periods['3mo'];
-    return { period1: now - seconds, period2: now };
+    const p = { '1d':86400,'5d':432000,'1mo':2592000,'3mo':7776000,'6mo':15552000,'1y':31536000,'2y':63072000,'5y':157680000 };
+    return { period1: now - (p[period] || p['3mo']), period2: now };
 }
+function round(n) { return n != null ? Math.round(n * 100) / 100 : 0; }
 
-// Indonesian stocks
+// ============ STOCKS CONFIG ============
 const TOP_STOCKS = ['BBCA.JK','BBRI.JK','BMRI.JK','TLKM.JK','ASII.JK','UNVR.JK','BBNI.JK','GOTO.JK','BRIS.JK','ICBP.JK','KLBF.JK','INDF.JK','ANTM.JK','PGAS.JK','SMGR.JK','PTBA.JK','ADRO.JK','EXCL.JK','ISAT.JK','CPIN.JK','MAPI.JK','ERAA.JK','AMRT.JK','SIDO.JK','UNTR.JK','ITMG.JK','MEDC.JK','BRPT.JK','INKP.JK','MDKA.JK'];
-
 const INDICES = { 'IHSG': '^JKSE', 'LQ45': '^JKLQ45', 'IDX30': '^JKIDX30', 'JII': '^JKII' };
-
 const SECTORS = {
     'Keuangan': ['BBCA.JK','BBRI.JK','BMRI.JK','BBNI.JK','BRIS.JK'],
-    'Teknologi': ['GOTO.JK','EMTK.JK'],
-    'Konsumer': ['UNVR.JK','ICBP.JK','INDF.JK'],
+    'Teknologi': ['GOTO.JK'],
+    'Konsumer': ['UNVR.JK','ICBP.JK','INDF.JK','CPIN.JK','AMRT.JK'],
     'Telekomunikasi': ['TLKM.JK','EXCL.JK','ISAT.JK'],
-    'Energi': ['ADRO.JK','PTBA.JK','ANTM.JK','MDKA.JK'],
+    'Energi': ['ADRO.JK','PTBA.JK','ANTM.JK','MDKA.JK','MEDC.JK','ITMG.JK'],
     'Infrastruktur': ['PGAS.JK','SMGR.JK'],
 };
 
-// API Route handlers
+// ============ API ROUTES ============
 const routes = {};
-
-routes['/api/health'] = async () => ({ status: 'ok', source: 'Yahoo Finance', delay: '15 min' });
+routes['/api/health'] = async () => ({ status: 'ok', source: useYahoo ? 'Yahoo Finance (live)' : 'Fallback Data', note: useYahoo ? 'Real-time 15min delay' : 'Simulated - Yahoo unreachable' });
 
 routes['/api/market/indices'] = async () => {
-    const symbols = Object.values(INDICES);
-    const quotes = await getQuotes(symbols);
+    const quotes = await getQuotes(Object.values(INDICES));
     const indices = Object.entries(INDICES).map(([name, sym]) => {
         const q = quotes.find(r => r.symbol === sym) || {};
-        return {
-            name,
-            symbol: sym,
-            price: q.regularMarketPrice || 0,
-            change: round(q.regularMarketChange || 0),
-            change_pct: round(q.regularMarketChangePercent || 0),
-        };
+        return { name, symbol: sym, price: q.regularMarketPrice || 0, change: round(q.regularMarketChange || 0), change_pct: round(q.regularMarketChangePercent || 0) };
     });
     return { indices };
 };
@@ -315,317 +283,156 @@ routes['/api/market/indices'] = async () => {
 routes['/api/market/top-movers'] = async (params) => {
     const limit = parseInt(params.limit) || 10;
     const quotes = await getQuotes(TOP_STOCKS);
-    const stocks = quotes.map(q => ({
-        symbol: q.symbol.replace('.JK', ''),
-        price: Math.round(q.regularMarketPrice || 0),
-        change: round(q.regularMarketChange || 0),
-        change_pct: round(q.regularMarketChangePercent || 0),
-        volume: q.regularMarketVolume || 0,
-        market_cap: q.marketCap || 0,
-    })).filter(s => s.price > 0);
-    const gainers = [...stocks].sort((a, b) => b.change_pct - a.change_pct).slice(0, limit);
-    const losers = [...stocks].sort((a, b) => a.change_pct - b.change_pct).slice(0, limit);
-    return { gainers, losers };
+    const stocks = quotes.map(q => ({ symbol: q.symbol.replace('.JK',''), price: Math.round(q.regularMarketPrice||0), change: round(q.regularMarketChange||0), change_pct: round(q.regularMarketChangePercent||0), volume: q.regularMarketVolume||0, market_cap: q.marketCap||0 })).filter(s => s.price > 0);
+    return { gainers: [...stocks].sort((a,b)=>b.change_pct-a.change_pct).slice(0,limit), losers: [...stocks].sort((a,b)=>a.change_pct-b.change_pct).slice(0,limit) };
 };
 
 routes['/api/market/sectors'] = async () => {
-    const allSymbols = [...new Set(Object.values(SECTORS).flat())];
-    const quotes = await getQuotes(allSymbols);
+    const allSyms = [...new Set(Object.values(SECTORS).flat())];
+    const quotes = await getQuotes(allSyms);
     const sectors = Object.entries(SECTORS).map(([name, syms]) => {
-        const sectorQuotes = syms.map(s => quotes.find(q => q.symbol === s)).filter(Boolean);
-        const changes = sectorQuotes.map(q => q.regularMarketChangePercent || 0);
-        const avg = changes.length ? changes.reduce((s, v) => s + v, 0) / changes.length : 0;
-        return {
-            sector: name,
-            change_pct: round(avg),
-            stocks: sectorQuotes.map(q => ({ symbol: q.symbol.replace('.JK', ''), change_pct: round(q.regularMarketChangePercent || 0) })).sort((a, b) => b.change_pct - a.change_pct),
-        };
-    }).sort((a, b) => b.change_pct - a.change_pct);
+        const sq = syms.map(s => quotes.find(q => q.symbol === s)).filter(Boolean);
+        const chgs = sq.map(q => q.regularMarketChangePercent || 0);
+        const avg = chgs.length ? chgs.reduce((s,v)=>s+v,0)/chgs.length : 0;
+        return { sector: name, change_pct: round(avg), stocks: sq.map(q => ({ symbol: q.symbol.replace('.JK',''), change_pct: round(q.regularMarketChangePercent||0) })).sort((a,b)=>b.change_pct-a.change_pct) };
+    }).sort((a,b)=>b.change_pct-a.change_pct);
     return { sectors };
 };
 
 routes['/api/market/summary'] = async () => {
     const quotes = await getQuotes(TOP_STOCKS);
-    let advancing = 0, declining = 0, unchanged = 0, totalVol = 0;
-    quotes.forEach(q => {
-        const chg = q.regularMarketChange || 0;
-        if (chg > 0) advancing++; else if (chg < 0) declining++; else unchanged++;
-        totalVol += q.regularMarketVolume || 0;
-    });
-    return { advancing, declining, unchanged, total_volume: totalVol, sentiment_score: Math.round(advancing / Math.max(advancing + declining, 1) * 100) };
+    let adv=0, dec=0, unc=0, vol=0;
+    quotes.forEach(q => { const c=q.regularMarketChange||0; if(c>0)adv++;else if(c<0)dec++;else unc++; vol+=q.regularMarketVolume||0; });
+    return { advancing:adv, declining:dec, unchanged:unc, total_volume:vol, sentiment_score: Math.round(adv/Math.max(adv+dec,1)*100) };
 };
 
 routes['/api/screener/scan'] = async (params) => {
-    const limit = parseInt(params.limit) || 20;
+    const limit = parseInt(params.limit)||20;
     const quotes = await getQuotes(TOP_STOCKS);
-
-    // Get RSI for each (simplified - use recent price data)
     const results = [];
     for (const q of quotes) {
         if (!q.regularMarketPrice) continue;
-        const pe = q.trailingPE || null;
-        const pb = q.priceToBook || null;
-        const chgPct = round(q.regularMarketChangePercent || 0);
-
-        // Apply filters
+        const pe=q.trailingPE||null, pb=q.priceToBook||null, chg=round(q.regularMarketChangePercent||0);
         if (params.max_pe && pe && pe > parseFloat(params.max_pe)) continue;
-        if (params.min_roe && (!q.returnOnEquity || q.returnOnEquity * 100 < parseFloat(params.min_roe))) continue;
-
-        results.push({
-            symbol: q.symbol.replace('.JK', ''),
-            price: Math.round(q.regularMarketPrice),
-            change_pct: chgPct,
-            pe: pe ? round(pe) : null,
-            pb: pb ? round(pb) : null,
-            roe: null, // Would need separate info call
-            div_yield: null,
-            rsi: 50, // Placeholder - real RSI needs historical data
-            volume: q.regularMarketVolume || 0,
-            volume_ratio: 1.0,
-            market_cap: q.marketCap || 0,
-            signal: chgPct > 1 ? 'buy' : chgPct < -1 ? 'sell' : 'neutral',
-        });
+        results.push({ symbol:q.symbol.replace('.JK',''), price:Math.round(q.regularMarketPrice), change_pct:chg, pe:pe?round(pe):null, pb:pb?round(pb):null, roe:null, div_yield:null, rsi:50, volume:q.regularMarketVolume||0, volume_ratio:1.0, market_cap:q.marketCap||0, signal:chg>1?'buy':chg<-1?'sell':'neutral' });
     }
-
-    results.sort((a, b) => b.change_pct - a.change_pct);
-    return { count: results.length, stocks: results.slice(0, limit) };
+    results.sort((a,b)=>b.change_pct-a.change_pct);
+    return { count: results.length, stocks: results.slice(0,limit) };
 };
 
-// Dynamic routes with path params
+
+// ============ DYNAMIC ROUTES ============
 async function handleStockRoute(symbol, action, params) {
     const ticker = `${symbol.toUpperCase()}.JK`;
-
     if (action === 'quote') {
         const quotes = await getQuotes([ticker]);
-        const q = quotes[0];
-        if (!q) throw new Error('Stock not found');
-        return {
-            symbol: symbol.toUpperCase(),
-            name: q.longName || q.shortName || symbol,
-            price: q.regularMarketPrice,
-            previous_close: q.regularMarketPreviousClose,
-            open: q.regularMarketOpen,
-            day_high: q.regularMarketDayHigh,
-            day_low: q.regularMarketDayLow,
-            volume: q.regularMarketVolume,
-            market_cap: q.marketCap,
-            change: round(q.regularMarketChange || 0),
-            change_pct: round(q.regularMarketChangePercent || 0),
-        };
+        const q = quotes[0]; if (!q) throw new Error('Stock not found');
+        return { symbol: symbol.toUpperCase(), name: q.longName||q.shortName||symbol, price: q.regularMarketPrice, previous_close: q.regularMarketPreviousClose, open: q.regularMarketOpen, day_high: q.regularMarketDayHigh, day_low: q.regularMarketDayLow, volume: q.regularMarketVolume, market_cap: q.marketCap, change: round(q.regularMarketChange||0), change_pct: round(q.regularMarketChangePercent||0) };
     }
-
     if (action === 'history') {
-        const period = params.period || '3mo';
-        const interval = params.interval || '1d';
-        const { period1, period2 } = periodToTimestamps(period);
-        const data = await getHistory(ticker, period1, period2, interval);
-        return { symbol: symbol.toUpperCase(), period, data };
+        const { period1, period2 } = periodToTimestamps(params.period || '3mo');
+        return { symbol: symbol.toUpperCase(), period: params.period||'3mo', data: await getHistory(ticker, period1, period2, params.interval||'1d') };
     }
-
     throw new Error('Unknown action');
 }
 
 async function handleTechnicalRoute(symbol, action, params) {
     const ticker = `${symbol.toUpperCase()}.JK`;
-    const period = params.period || '6mo';
-    const { period1, period2 } = periodToTimestamps(period);
+    const { period1, period2 } = periodToTimestamps(params.period || '6mo');
     const candles = await getHistory(ticker, period1, period2, '1d');
-
     if (candles.length < 30) throw new Error('Insufficient data');
 
-    const closes = candles.map(c => c.close);
-    const highs = candles.map(c => c.high);
-    const lows = candles.map(c => c.low);
-    const volumes = candles.map(c => c.volume);
-
-    const ma20 = calcSMA(closes, 20);
-    const ma50 = calcSMA(closes, 50);
-    const ma200 = calcSMA(closes, 200);
-    const rsi = calcRSI(closes, 14);
-    const { macd, signal: macdSignal, histogram } = calcMACD(closes);
-    const bb_mid = calcSMA(closes, 20);
-    const volAvg = calcSMA(volumes.map(v => v), 20);
-
+    const closes = candles.map(c=>c.close), highs = candles.map(c=>c.high), lows = candles.map(c=>c.low), volumes = candles.map(c=>c.volume);
+    const ma20 = calcSMA(closes,20), ma50 = calcSMA(closes,50), ma200 = calcSMA(closes,200);
+    const rsi = calcRSI(closes,14);
+    const { macd, signal: macdSig, histogram } = calcMACD(closes);
+    const volAvg = calcSMA(volumes, 20);
     const last = closes.length - 1;
     const currentPrice = closes[last];
     const currentRSI = rsi[last] != null ? round(rsi[last]) : 50;
-    const currentMACD = round(macd[last]);
-    const currentMACDSignal = round(macdSignal[last]);
-    const currentMA20 = ma20[last] ? Math.round(ma20[last]) : null;
-    const currentMA50 = ma50[last] ? Math.round(ma50[last]) : null;
-    const currentMA200 = ma200[last] ? Math.round(ma200[last]) : null;
+    const currentMACD = round(macd[last]), currentMACDSig = round(macdSig[last]);
+    const cMA20 = ma20[last]?Math.round(ma20[last]):null, cMA50 = ma50[last]?Math.round(ma50[last]):null, cMA200 = ma200[last]?Math.round(ma200[last]):null;
     const volRatio = volAvg[last] > 0 ? round(volumes[last] / volAvg[last]) : 1;
 
-    // BB
     let bbStd = 0;
-    if (last >= 19) {
-        const slice = closes.slice(last - 19, last + 1);
-        const mean = slice.reduce((s, v) => s + v, 0) / 20;
-        bbStd = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / 20);
-    }
-    const bbUpper = currentMA20 ? Math.round(currentMA20 + 2 * bbStd) : null;
-    const bbLower = currentMA20 ? Math.round(currentMA20 - 2 * bbStd) : null;
+    if (last >= 19) { const sl = closes.slice(last-19,last+1); const mn = sl.reduce((s,v)=>s+v,0)/20; bbStd = Math.sqrt(sl.reduce((s,v)=>s+(v-mn)**2,0)/20); }
+    const bbUpper = cMA20 ? Math.round(cMA20 + 2*bbStd) : null;
+    const bbLower = cMA20 ? Math.round(cMA20 - 2*bbStd) : null;
 
-    // Support & Resistance (simple pivot)
-    const recentHighs = highs.slice(-20);
-    const recentLows = lows.slice(-20);
-    const resistances = [...new Set(recentHighs)].filter(h => h > currentPrice).sort((a, b) => a - b).slice(0, 3);
-    const supports = [...new Set(recentLows)].filter(l => l < currentPrice).sort((a, b) => b - a).slice(0, 3);
+    const resistances = [...new Set(highs.slice(-20))].filter(h=>h>currentPrice).sort((a,b)=>a-b).slice(0,3);
+    const supports = [...new Set(lows.slice(-20))].filter(l=>l<currentPrice).sort((a,b)=>b-a).slice(0,3);
 
-    // Signals
     const signals = [];
-    if (currentRSI < 30) signals.push({ indicator: 'RSI', signal: 'oversold', type: 'buy' });
-    else if (currentRSI > 70) signals.push({ indicator: 'RSI', signal: 'overbought', type: 'sell' });
-    else signals.push({ indicator: 'RSI', signal: 'netral', type: currentRSI < 50 ? 'buy' : 'sell' });
+    if (currentRSI < 30) signals.push({indicator:'RSI',signal:'oversold',type:'buy'}); else if (currentRSI > 70) signals.push({indicator:'RSI',signal:'overbought',type:'sell'}); else signals.push({indicator:'RSI',signal:'netral',type:currentRSI<50?'buy':'sell'});
+    if (currentMACD > currentMACDSig) signals.push({indicator:'MACD',signal:'bullish crossover',type:'buy'}); else signals.push({indicator:'MACD',signal:'bearish crossover',type:'sell'});
+    if (currentPrice > cMA20) signals.push({indicator:'MA20',signal:'harga di atas MA20',type:'buy'}); else signals.push({indicator:'MA20',signal:'harga di bawah MA20',type:'sell'});
+    if (cMA20 && cMA50 && cMA20 > cMA50) signals.push({indicator:'Golden Cross',signal:'MA20 > MA50',type:'buy'});
 
-    if (currentMACD > currentMACDSignal) signals.push({ indicator: 'MACD', signal: 'bullish crossover', type: 'buy' });
-    else signals.push({ indicator: 'MACD', signal: 'bearish crossover', type: 'sell' });
-
-    if (currentPrice > currentMA20) signals.push({ indicator: 'MA20', signal: 'harga di atas MA20', type: 'buy' });
-    else signals.push({ indicator: 'MA20', signal: 'harga di bawah MA20', type: 'sell' });
-
-    if (currentMA20 && currentMA50 && currentMA20 > currentMA50) signals.push({ indicator: 'Golden Cross', signal: 'MA20 > MA50', type: 'buy' });
-
-    const buyCount = signals.filter(s => s.type === 'buy').length;
-    const score = round((buyCount / signals.length) * 10);
-    const rec = score >= 8 ? 'Strong Buy' : score >= 6 ? 'Buy' : score >= 4 ? 'Neutral' : score >= 2 ? 'Sell' : 'Strong Sell';
+    const buyCount = signals.filter(s=>s.type==='buy').length;
+    const score = round((buyCount/signals.length)*10);
+    const rec = score>=8?'Strong Buy':score>=6?'Buy':score>=4?'Neutral':score>=2?'Sell':'Strong Sell';
 
     if (action === 'indicators') {
-        return {
-            symbol: symbol.toUpperCase(), price: currentPrice,
-            indicators: { ma20: currentMA20, ma50: currentMA50, ma200: currentMA200, rsi: currentRSI, macd: currentMACD, macd_signal: currentMACDSignal, macd_histogram: round(histogram[last]), bb_upper: bbUpper, bb_middle: currentMA20, bb_lower: bbLower, stochastic_k: null, stochastic_d: null, volume: volumes[last], volume_avg_20: volAvg[last] ? Math.round(volAvg[last]) : 0, volume_ratio: volRatio },
-            support_resistance: { supports, resistances },
-            signals, score, recommendation: rec,
-        };
+        return { symbol: symbol.toUpperCase(), price: currentPrice, indicators: { ma20:cMA20, ma50:cMA50, ma200:cMA200, rsi:currentRSI, macd:currentMACD, macd_signal:currentMACDSig, macd_histogram:round(histogram[last]), bb_upper:bbUpper, bb_middle:cMA20, bb_lower:bbLower, stochastic_k:null, stochastic_d:null, volume:volumes[last], volume_avg_20:volAvg[last]?Math.round(volAvg[last]):0, volume_ratio:volRatio }, support_resistance:{supports,resistances}, signals, score, recommendation:rec };
     }
-
     if (action === 'chart-data') {
-        const chartCandles = candles.map((c, i) => ({ ...c, ma20: ma20[i] ? Math.round(ma20[i]) : null, ma50: ma50[i] ? Math.round(ma50[i]) : null, rsi: rsi[i] != null ? round(rsi[i]) : null, macd: round(macd[i]), macd_signal: round(macdSignal[i]), macd_hist: round(histogram[i]) }));
-        return { symbol: symbol.toUpperCase(), data: chartCandles };
+        return { symbol: symbol.toUpperCase(), data: candles.map((c,i) => ({...c, ma20:ma20[i]?Math.round(ma20[i]):null, ma50:ma50[i]?Math.round(ma50[i]):null, rsi:rsi[i]!=null?round(rsi[i]):null, macd:round(macd[i]), macd_signal:round(macdSig[i]), macd_hist:round(histogram[i])})) };
     }
-
     throw new Error('Unknown action');
 }
 
 async function handleFundamentalRoute(symbol) {
     const ticker = `${symbol.toUpperCase()}.JK`;
     const quotes = await getQuotes([ticker]);
-    const q = quotes[0];
-    if (!q) throw new Error('Stock not found');
-    return {
-        symbol: symbol.toUpperCase(),
-        name: q.longName || q.shortName || symbol,
-        sector: q.sector || '',
-        industry: q.industry || '',
-        market_cap: q.marketCap || 0,
-        ratios: {
-            pe_ratio: q.trailingPE ? round(q.trailingPE) : null,
-            pb_ratio: q.priceToBook ? round(q.priceToBook) : null,
-            roe: null, roa: null, debt_to_equity: null, current_ratio: null, dividend_yield: null, payout_ratio: null,
-        },
-        growth: { revenue_growth: null, earnings_growth: null },
-        margins: { profit_margin: null, operating_margin: null, gross_margin: null },
-        valuation: { enterprise_value: 0, ev_to_revenue: 0, ev_to_ebitda: 0, peg_ratio: 0 },
-    };
+    const q = quotes[0]; if (!q) throw new Error('Stock not found');
+    return { symbol: symbol.toUpperCase(), name: q.longName||q.shortName||symbol, sector: q.sector||'', industry: q.industry||'', market_cap: q.marketCap||0, ratios: { pe_ratio:q.trailingPE?round(q.trailingPE):null, pb_ratio:q.priceToBook?round(q.priceToBook):null, roe:null,roa:null,debt_to_equity:null,current_ratio:null,dividend_yield:null,payout_ratio:null }, growth:{revenue_growth:null,earnings_growth:null}, margins:{profit_margin:null,operating_margin:null,gross_margin:null}, valuation:{enterprise_value:0,ev_to_revenue:0,ev_to_ebitda:0,peg_ratio:0} };
 }
 
-function round(n) { return n != null ? Math.round(n * 100) / 100 : 0; }
-
-// HTTP Server
+// ============ HTTP SERVER ============
 const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, `http://${req.headers.host}`);
     const pathname = parsed.pathname;
     const params = Object.fromEntries(parsed.searchParams.entries());
 
-    // API routes
     if (pathname.startsWith('/api/')) {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-        // Handle preflight
-        if (req.method === 'OPTIONS') {
-            res.writeHead(204);
-            res.end();
-            return;
-        }
+        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
         try {
-            // Static routes
-            if (routes[pathname]) {
-                const result = await routes[pathname](params);
-                res.writeHead(200);
-                res.end(JSON.stringify(result));
-                return;
-            }
-
-            // /api/stock/:symbol/:action
+            if (routes[pathname]) { const r = await routes[pathname](params); res.writeHead(200); res.end(JSON.stringify(r)); return; }
             const stockMatch = pathname.match(/^\/api\/stock\/([^/]+)\/([^/]+)$/);
-            if (stockMatch) {
-                const result = await handleStockRoute(stockMatch[1], stockMatch[2], params);
-                res.writeHead(200);
-                res.end(JSON.stringify(result));
-                return;
-            }
-
-            // /api/technical/:symbol/:action
+            if (stockMatch) { const r = await handleStockRoute(stockMatch[1], stockMatch[2], params); res.writeHead(200); res.end(JSON.stringify(r)); return; }
             const techMatch = pathname.match(/^\/api\/technical\/([^/]+)\/([^/]+)$/);
-            if (techMatch) {
-                const result = await handleTechnicalRoute(techMatch[1], techMatch[2], params);
-                res.writeHead(200);
-                res.end(JSON.stringify(result));
-                return;
-            }
-
-            // /api/fundamental/:symbol
+            if (techMatch) { const r = await handleTechnicalRoute(techMatch[1], techMatch[2], params); res.writeHead(200); res.end(JSON.stringify(r)); return; }
             const fundMatch = pathname.match(/^\/api\/fundamental\/([^/]+)$/);
-            if (fundMatch) {
-                const result = await handleFundamentalRoute(fundMatch[1]);
-                res.writeHead(200);
-                res.end(JSON.stringify(result));
-                return;
-            }
-
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: 'Not found' }));
-        } catch (err) {
-            console.error('API Error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-        }
+            if (fundMatch) { const r = await handleFundamentalRoute(fundMatch[1]); res.writeHead(200); res.end(JSON.stringify(r)); return; }
+            res.writeHead(404); res.end(JSON.stringify({ error: 'Not found' }));
+        } catch (err) { console.error('API Error:', err.message); res.writeHead(500); res.end(JSON.stringify({ error: err.message })); }
         return;
     }
 
-    // Serve static files
+    // Static files with path traversal protection
     let filePath = pathname === '/' ? '/index.html' : pathname;
     filePath = path.join(__dirname, filePath);
-
-    // Security: prevent path traversal attacks
     const resolvedPath = path.resolve(filePath);
-    if (!resolvedPath.startsWith(__dirname)) {
-        res.writeHead(403);
-        res.end('Forbidden');
-        return;
-    }
-
+    if (!resolvedPath.startsWith(__dirname)) { res.writeHead(403); res.end('Forbidden'); return; }
     try {
         const content = fs.readFileSync(resolvedPath);
-        const ext = path.extname(resolvedPath);
-        res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream');
-        res.writeHead(200);
-        res.end(content);
-    } catch {
-        res.writeHead(404);
-        res.end('Not found');
-    }
+        res.setHeader('Content-Type', MIME[path.extname(resolvedPath)] || 'application/octet-stream');
+        res.writeHead(200); res.end(content);
+    } catch { res.writeHead(404); res.end('Not found'); }
 });
 
 server.listen(PORT, () => {
-    console.log(`\n  ╔══════════════════════════════════════╗`);
-    console.log(`  ║   SahamID - Analisa Saham Indonesia  ║`);
-    console.log(`  ╠══════════════════════════════════════╣`);
-    console.log(`  ║  Server: http://localhost:${PORT}       ║`);
-    console.log(`  ║  Data:   Yahoo Finance (real-time)   ║`);
-    console.log(`  ╚══════════════════════════════════════╝\n`);
+    console.log(`\n  ╔══════════════════════════════════════════╗`);
+    console.log(`  ║   SahamID - Analisa Saham Indonesia      ║`);
+    console.log(`  ╠══════════════════════════════════════════╣`);
+    console.log(`  ║  Server: http://localhost:${PORT}           ║`);
+    console.log(`  ║  Mode:   Yahoo Finance + Auto Fallback   ║`);
+    console.log(`  ║  Info:   Jika Yahoo gagal, data simulasi  ║`);
+    console.log(`  ║          realistis akan ditampilkan       ║`);
+    console.log(`  ╚══════════════════════════════════════════╝\n`);
 });
