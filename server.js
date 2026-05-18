@@ -35,94 +35,158 @@ const MIME = {
 let yfCookie = '';
 let yfCrumb = '';
 let yfAuthTime = 0;
+let yfAuthFailed = false;
 
-function httpsGet(hostname, path, headers = {}) {
+function httpsRequest(urlStr, options = {}) {
     return new Promise((resolve, reject) => {
-        const options = {
-            hostname,
-            path,
-            method: 'GET',
+        const parsed = new URL(urlStr);
+        const reqOpts = {
+            hostname: parsed.hostname,
+            port: parsed.port || 443,
+            path: parsed.pathname + parsed.search,
+            method: options.method || 'GET',
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                ...headers,
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                ...(options.headers || {}),
             },
         };
-        const req = https.request(options, (res) => {
+        const req = https.request(reqOpts, (res) => {
+            // Follow redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const redirectUrl = res.headers.location.startsWith('http')
+                    ? res.headers.location
+                    : `https://${parsed.hostname}${res.headers.location}`;
+                resolve(httpsRequest(redirectUrl, { ...options, headers: { ...reqOpts.headers, ...options.headers } }));
+                return;
+            }
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, body: data }));
         });
-        req.on('error', (e) => {
-            console.warn(`Yahoo API unreachable: ${e.message}. Make sure server has internet access.`);
-            reject(e);
-        });
-        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout - pastikan server terhubung ke internet')); });
+        req.on('error', reject);
+        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
         req.end();
     });
 }
 
 async function refreshYahooAuth() {
-    // Refresh every 30 minutes
-    if (yfCookie && yfCrumb && (Date.now() - yfAuthTime) < 1800000) return;
+    if (yfCookie && yfCrumb && (Date.now() - yfAuthTime) < 1800000) return true;
+    
+    console.log('Refreshing Yahoo Finance authentication...');
     
     try {
-        // Step 1: Get cookie from Yahoo Finance page
-        const pageRes = await httpsGet('finance.yahoo.com', '/quote/BBCA.JK');
-        const setCookies = pageRes.headers['set-cookie'] || [];
-        const cookies = setCookies.map(c => c.split(';')[0]).join('; ');
-        
-        if (cookies) {
-            yfCookie = cookies;
-            // Step 2: Get crumb using cookie
-            const crumbRes = await httpsGet('query2.finance.yahoo.com', '/v1/test/getcrumb', {
-                'Cookie': yfCookie,
-            });
-            if (crumbRes.statusCode === 200 && crumbRes.body && !crumbRes.body.includes('<')) {
-                yfCrumb = crumbRes.body.trim();
-                yfAuthTime = Date.now();
-                console.log('Yahoo Finance auth refreshed successfully');
-                return;
-            }
+        // Method 1: Get consent cookie first, then crumb
+        // Visit fc.yahoo.com to get initial cookie
+        const initRes = await httpsRequest('https://fc.yahoo.com');
+        let cookies = '';
+        const setCookies = initRes.headers['set-cookie'] || [];
+        if (setCookies.length > 0) {
+            cookies = setCookies.map(c => c.split(';')[0]).join('; ');
         }
+        
+        // If no cookies from fc.yahoo.com, try direct approach
+        if (!cookies) {
+            const directRes = await httpsRequest('https://finance.yahoo.com', {
+                headers: { 'Accept': 'text/html' }
+            });
+            const directCookies = directRes.headers['set-cookie'] || [];
+            cookies = directCookies.map(c => c.split(';')[0]).join('; ');
+        }
+        
+        if (!cookies) {
+            console.warn('No cookies received from Yahoo');
+            yfAuthFailed = true;
+            return false;
+        }
+        
+        // Get crumb with cookie
+        const crumbRes = await httpsRequest('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+            headers: {
+                'Cookie': cookies,
+                'Accept': 'text/plain',
+            }
+        });
+        
+        if (crumbRes.statusCode === 200 && crumbRes.body && !crumbRes.body.includes('<') && crumbRes.body.length < 50) {
+            yfCookie = cookies;
+            yfCrumb = crumbRes.body.trim();
+            yfAuthTime = Date.now();
+            yfAuthFailed = false;
+            console.log('Yahoo Finance auth OK (crumb obtained)');
+            return true;
+        }
+        
+        // Method 2: Try with A3 consent cookie
+        const consentCookie = 'A1=d=AQABBKV1YmcCEPKm_xKP&S=AQAAAkMx; A3=d=AQABBKV1YmcCEPKm_xKP&S=AQAAAkMx; GUC=AQEBAgJlda1';
+        const crumbRes2 = await httpsRequest('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+            headers: {
+                'Cookie': consentCookie,
+                'Accept': 'text/plain',
+            }
+        });
+        
+        if (crumbRes2.statusCode === 200 && crumbRes2.body && !crumbRes2.body.includes('<') && crumbRes2.body.length < 50) {
+            yfCookie = consentCookie;
+            yfCrumb = crumbRes2.body.trim();
+            yfAuthTime = Date.now();
+            yfAuthFailed = false;
+            console.log('Yahoo Finance auth OK (method 2)');
+            return true;
+        }
+        
+        console.warn('Could not obtain crumb. Status:', crumbRes.statusCode, 'Body:', crumbRes.body.substring(0, 100));
+        yfAuthFailed = true;
+        return false;
     } catch (e) {
-        console.warn('Failed to get Yahoo auth:', e.message);
+        console.warn('Yahoo auth failed:', e.message);
+        yfAuthFailed = true;
+        return false;
     }
-    
-    // Reset on failure
-    yfCookie = '';
-    yfCrumb = '';
 }
 
 async function yahooFetch(endpoint) {
-    await refreshYahooAuth();
+    const authOk = await refreshYahooAuth();
     
-    const separator = endpoint.includes('?') ? '&' : '?';
-    const url = yfCrumb ? `${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}` : endpoint;
-    
+    let url;
     const headers = { 'Accept': 'application/json' };
-    if (yfCookie) headers['Cookie'] = yfCookie;
     
-    const res = await httpsGet('query1.finance.yahoo.com', url, headers);
+    if (authOk && yfCrumb) {
+        const separator = endpoint.includes('?') ? '&' : '?';
+        url = `https://query1.finance.yahoo.com${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}`;
+        headers['Cookie'] = yfCookie;
+    } else {
+        // Try without auth (v8 chart sometimes works without)
+        url = `https://query1.finance.yahoo.com${endpoint}`;
+    }
+    
+    const res = await httpsRequest(url, { headers });
     
     if (res.statusCode === 401 || res.statusCode === 403) {
-        // Auth expired, retry once
+        // Force re-auth and retry
         yfAuthTime = 0;
-        await refreshYahooAuth();
-        const retryUrl = yfCrumb ? `${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}` : endpoint;
-        const retryHeaders = { 'Accept': 'application/json' };
-        if (yfCookie) retryHeaders['Cookie'] = yfCookie;
-        const retryRes = await httpsGet('query1.finance.yahoo.com', retryUrl, retryHeaders);
-        try {
-            return JSON.parse(retryRes.body);
-        } catch (e) {
-            throw new Error(`Parse error after retry: ${retryRes.body.substring(0, 200)}`);
+        yfCookie = '';
+        yfCrumb = '';
+        const retryAuth = await refreshYahooAuth();
+        
+        if (retryAuth && yfCrumb) {
+            const separator = endpoint.includes('?') ? '&' : '?';
+            const retryUrl = `https://query1.finance.yahoo.com${endpoint}${separator}crumb=${encodeURIComponent(yfCrumb)}`;
+            const retryRes = await httpsRequest(retryUrl, { headers: { 'Accept': 'application/json', 'Cookie': yfCookie } });
+            try {
+                return JSON.parse(retryRes.body);
+            } catch (e) {
+                throw new Error(`Yahoo API error (retry): status ${retryRes.statusCode}`);
+            }
         }
+        throw new Error(`Yahoo API unauthorized - could not authenticate`);
     }
     
     try {
         return JSON.parse(res.body);
     } catch (e) {
-        throw new Error(`Parse error: ${res.body.substring(0, 200)}`);
+        throw new Error(`Yahoo API parse error (status ${res.statusCode}): ${res.body.substring(0, 150)}`);
     }
 }
 
