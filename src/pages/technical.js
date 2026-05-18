@@ -6,6 +6,31 @@ async function getTechnicalPage() {
         fetchAPI(`/technical/${techSymbol}/chart-data?period=3mo`),
     ]);
 
+    if (!indicators && !chartData) {
+        return `
+        <div class="space-y-6">
+            <div class="flex items-center justify-between">
+                <h2 class="text-2xl font-bold text-white">Analisa Teknikal</h2>
+            </div>
+            <div class="card p-4">
+                <div class="flex flex-wrap items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <input id="tech-symbol-input" type="text" value="${techSymbol}" class="w-20 bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white font-bold uppercase" onkeydown="if(event.key==='Enter')changeTechSymbol()">
+                        <button onclick="changeTechSymbol()" class="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="card p-8 text-center">
+                <i class="fas fa-exclamation-triangle text-4xl text-warning mb-4"></i>
+                <h3 class="text-lg font-semibold text-white mb-2">Gagal Memuat Data</h3>
+                <p class="text-dark-400 text-sm mb-4">Tidak dapat mengambil data teknikal untuk ${techSymbol}. Pastikan simbol benar.</p>
+                <button onclick="navigateTo('technical')" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+                    <i class="fas fa-sync-alt mr-2"></i>Coba Lagi
+                </button>
+            </div>
+        </div>`;
+    }
+
     const ind = indicators?.indicators || {};
     const signals = indicators?.signals || [];
     const sr = indicators?.support_resistance || {};

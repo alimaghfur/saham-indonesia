@@ -20,6 +20,15 @@ const MIME = {
     '.json': 'application/json',
     '.png': 'image/png',
     '.ico': 'image/x-icon',
+    '.svg': 'image/svg+xml',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
+    '.map': 'application/json',
 };
 
 // Yahoo Finance API helper
@@ -465,9 +474,17 @@ const server = http.createServer(async (req, res) => {
     let filePath = pathname === '/' ? '/index.html' : pathname;
     filePath = path.join(__dirname, filePath);
 
+    // Security: prevent path traversal attacks
+    const resolvedPath = path.resolve(filePath);
+    if (!resolvedPath.startsWith(__dirname)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+    }
+
     try {
-        const content = fs.readFileSync(filePath);
-        const ext = path.extname(filePath);
+        const content = fs.readFileSync(resolvedPath);
+        const ext = path.extname(resolvedPath);
         res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream');
         res.writeHead(200);
         res.end(content);

@@ -2,6 +2,16 @@ async function getScreenerPage() {
     const data = await fetchAPI('/screener/scan?limit=20&sort_by=change_pct');
     const stocks = data?.stocks || [];
 
+    const errorState = !data ? `
+        <div class="card p-8 text-center">
+            <i class="fas fa-exclamation-triangle text-4xl text-warning mb-4"></i>
+            <h3 class="text-lg font-semibold text-white mb-2">Gagal Memuat Data</h3>
+            <p class="text-dark-400 text-sm mb-4">Tidak dapat terhubung ke server.</p>
+            <button onclick="navigateTo('screener')" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+                <i class="fas fa-sync-alt mr-2"></i>Coba Lagi
+            </button>
+        </div>` : '';
+
     return `
     <div class="space-y-6">
         <div class="flex items-center justify-between">
@@ -36,6 +46,7 @@ async function getScreenerPage() {
         </div>
 
         <!-- Results -->
+        ${errorState}
         <div class="card p-5" id="screener-results">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-sm font-semibold text-dark-300">Hasil: <span class="text-white">${stocks.length} saham</span></h3>

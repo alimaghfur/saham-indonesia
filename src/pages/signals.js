@@ -3,12 +3,16 @@ async function getSignalsPage() {
     const stocks = ['BBCA', 'BBRI', 'BMRI', 'TLKM', 'ASII', 'BRIS', 'GOTO', 'UNVR'];
     const signalResults = [];
 
-    for (const sym of stocks) {
-        const data = await fetchAPI(`/technical/${sym}/indicators`);
+    // Fetch all stocks in parallel for better performance
+    const results = await Promise.all(
+        stocks.map(sym => fetchAPI(`/technical/${sym}/indicators`))
+    );
+
+    results.forEach((data, index) => {
         if (data && data.signals) {
             data.signals.forEach(sig => {
                 signalResults.push({
-                    symbol: sym,
+                    symbol: stocks[index],
                     price: data.price,
                     indicator: sig.indicator,
                     signal: sig.signal,
@@ -17,6 +21,21 @@ async function getSignalsPage() {
                 });
             });
         }
+    });
+
+    // Show error if no data received at all
+    if (signalResults.length === 0 && results.every(r => r === null)) {
+        return `
+        <div class="flex items-center justify-center h-64">
+            <div class="text-center">
+                <i class="fas fa-exclamation-triangle text-4xl text-warning mb-4"></i>
+                <h3 class="text-lg font-semibold text-white mb-2">Gagal Memuat Sinyal</h3>
+                <p class="text-dark-400 text-sm mb-4">Tidak dapat mengambil data teknikal dari server.</p>
+                <button onclick="navigateTo('signals')" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+                    <i class="fas fa-sync-alt mr-2"></i>Coba Lagi
+                </button>
+            </div>
+        </div>`;
     }
 
     const buySignals = signalResults.filter(s => s.type === 'buy');

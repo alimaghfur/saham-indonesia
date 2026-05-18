@@ -1,5 +1,21 @@
 async function getHeatmapPage() {
     const data = await fetchAPI('/market/top-movers?limit=30');
+    const sectorsData = await fetchAPI('/market/sectors');
+
+    if (!data && !sectorsData) {
+        return `
+        <div class="flex items-center justify-center h-64">
+            <div class="text-center">
+                <i class="fas fa-exclamation-triangle text-4xl text-warning mb-4"></i>
+                <h3 class="text-lg font-semibold text-white mb-2">Gagal Memuat Data</h3>
+                <p class="text-dark-400 text-sm mb-4">Tidak dapat terhubung ke server.</p>
+                <button onclick="navigateTo('heatmap')" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+                    <i class="fas fa-sync-alt mr-2"></i>Coba Lagi
+                </button>
+            </div>
+        </div>`;
+    }
+
     const allStocks = [...(data?.gainers || []), ...(data?.losers || [])];
     // Remove duplicates by symbol
     const uniqueStocks = [];
@@ -10,7 +26,6 @@ async function getHeatmapPage() {
             uniqueStocks.push(s);
         }
     }
-    const sectorsData = await fetchAPI('/market/sectors');
     const sectors = sectorsData?.sectors || [];
 
     return `
