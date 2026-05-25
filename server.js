@@ -172,7 +172,13 @@ async function tvGetQuotes(symbols) {
             symbols: { tickers },
             columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'price_earnings_ttm', 'price_book_fq', 'open', 'high', 'low', 'name', 'description', 'sector', 'Perf.W', 'Perf.1M', 'prev_close_price']
         };
-        const data = await tvScan(body);
+        const res = await httpsPost(TV_SCANNER_URL, body);
+        if (res.status !== 200) {
+            console.warn('[TradingView] Quote API error:', res.status, res.body?.substring(0, 200));
+            USE_FALLBACK = true;
+            return getMockQuotes(symbols);
+        }
+        const data = JSON.parse(res.body);
         if (!data.data) return getMockQuotes(symbols);
         return data.data.map(item => {
             const d = item.d;
@@ -206,12 +212,18 @@ async function tvGetTopStocks(sortBy, sortOrder, limit) {
     if (USE_FALLBACK) return getMockTopStocks(sortBy, sortOrder, limit);
     try {
         const body = {
-            filter: [{ left: 'exchange', operation: 'equal', right: 'IDX' }],
             columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'name', 'description', 'sector', 'price_earnings_ttm', 'price_book_fq', 'open', 'high', 'low', 'prev_close_price'],
             sort: { sortBy: sortBy || 'volume', sortOrder: sortOrder || 'desc' },
-            range: [0, limit || 30]
+            range: [0, limit || 30],
+            markets: ['indonesia']
         };
-        const data = await tvScan(body);
+        const res = await httpsPost(TV_SCANNER_URL, body);
+        if (res.status !== 200) {
+            console.warn('[TradingView] TopStocks API error:', res.status, res.body?.substring(0, 200));
+            USE_FALLBACK = true;
+            return getMockTopStocks(sortBy, sortOrder, limit);
+        }
+        const data = JSON.parse(res.body);
         if (!data.data) return getMockTopStocks(sortBy, sortOrder, limit);
         return data.data.map(item => {
             const d = item.d;
@@ -510,21 +522,27 @@ routes['/api/screener/scan'] = async (params) => {
     }
 
     // Build filter array for TradingView
-    const filter = [{ left: 'exchange', operation: 'equal', right: 'IDX' }];
+    const filter = [];
     if (params.min_price) filter.push({ left: 'close', operation: 'greater', right: parseFloat(params.min_price) });
     if (params.max_price) filter.push({ left: 'close', operation: 'less', right: parseFloat(params.max_price) });
     if (params.min_volume) filter.push({ left: 'volume', operation: 'greater', right: parseFloat(params.min_volume) });
     if (params.max_pe) filter.push({ left: 'price_earnings_ttm', operation: 'less', right: parseFloat(params.max_pe) });
-    if (params.sector) filter.push({ left: 'sector', operation: 'equal', right: params.sector });
 
     const body = {
         filter,
         columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'name', 'description', 'sector', 'price_earnings_ttm', 'price_book_fq', 'RSI', 'open', 'high', 'low'],
         sort: { sortBy, sortOrder },
-        range: [0, limit]
+        range: [0, limit],
+        markets: ['indonesia']
     };
 
-    const data = await tvScan(body);
+    const res = await httpsPost(TV_SCANNER_URL, body);
+    if (res.status !== 200) {
+        console.warn('[TradingView] Screener API error:', res.status);
+        USE_FALLBACK = true;
+        return { count: 0, stocks: [] };
+    }
+    const data = JSON.parse(res.body);
     const results = (data.data || []).map(item => {
         const d = item.d;
         const sym = item.s.replace('IDX:', '');
