@@ -12,16 +12,28 @@ const { URL } = require('url');
 
 // Load .env manually
 try {
-    const envContent = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+    const envPath = path.join(__dirname, '.env');
+    const envContent = fs.readFileSync(envPath, 'utf8');
     envContent.split('\n').forEach(line => {
-        const match = line.match(/^([^#=]+)=(.*)$/);
-        if (match) process.env[match[1].trim()] = match[2].trim();
+        line = line.trim();
+        if (!line || line.startsWith('#')) return;
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+            const key = line.substring(0, idx).trim();
+            const val = line.substring(idx + 1).trim();
+            process.env[key] = val;
+        }
     });
-} catch (e) {}
+    console.log('[ENV] Loaded from', envPath);
+} catch (e) {
+    console.warn('[ENV] Failed to load .env:', e.message);
+}
 
 const PORT = process.env.PORT || 8000;
 const TWELVE_DATA_KEY = process.env.TWELVE_DATA_KEY || '';
 const TD_BASE = 'https://api.twelvedata.com';
+
+console.log('[Config] API Key:', TWELVE_DATA_KEY ? TWELVE_DATA_KEY.substring(0, 8) + '...' : 'NOT SET');
 
 process.on('unhandledRejection', (err) => {
     console.warn('[Warning] Unhandled rejection:', err.message || err);
