@@ -17,7 +17,7 @@ async function getScreenerPage() {
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="text-2xl font-bold text-white">Screener</h2>
-                <p class="text-dark-400 text-sm mt-1">Filter dan temukan saham - data real dari Yahoo Finance</p>
+                <p class="text-dark-400 text-sm mt-1">Filter dan temukan saham - data real dari TradingView</p>
             </div>
             <button onclick="runScreener()" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700"><i class="fas fa-play mr-2"></i>Jalankan</button>
         </div>

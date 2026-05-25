@@ -13,7 +13,7 @@ async function getDashboardPage() {
             <div class="text-center">
                 <i class="fas fa-exclamation-triangle text-4xl text-warning mb-4"></i>
                 <h3 class="text-lg font-semibold text-white mb-2">Gagal Memuat Data</h3>
-                <p class="text-dark-400 text-sm mb-4">Tidak dapat terhubung ke server atau API Yahoo Finance.</p>
+                <p class="text-dark-400 text-sm mb-4">Tidak dapat terhubung ke server atau API data saham.</p>
                 <button onclick="navigateTo('dashboard')" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
                     <i class="fas fa-sync-alt mr-2"></i>Coba Lagi
                 </button>
@@ -35,7 +35,7 @@ async function getDashboardPage() {
             </div>
             <div class="flex items-center gap-2">
                 <span class="w-2 h-2 bg-success rounded-full pulse-dot"></span>
-                <span class="text-xs text-dark-400">Live dari Yahoo Finance</span>
+                <span class="text-xs text-dark-400">Live dari TradingView</span>
                 <button onclick="navigateTo('dashboard')" class="ml-2 p-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white">
                     <i class="fas fa-sync-alt text-sm"></i>
                 </button>

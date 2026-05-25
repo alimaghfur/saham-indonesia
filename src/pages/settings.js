@@ -14,11 +14,11 @@ function getSettingsPage() {
                 </div>
                 <div class="flex items-center justify-between py-2 border-b border-dark-800">
                     <span class="text-sm text-dark-300">Sumber Data</span>
-                    <span class="text-sm text-success"><i class="fas fa-check-circle mr-1"></i>Yahoo Finance (Real-time)</span>
+                    <span class="text-sm text-success"><i class="fas fa-check-circle mr-1"></i>TradingView Scanner API (Real-time)</span>
                 </div>
                 <div class="flex items-center justify-between py-2 border-b border-dark-800">
                     <span class="text-sm text-dark-300">Delay Data</span>
-                    <span class="text-sm text-white">15 menit (standard Yahoo Finance)</span>
+                    <span class="text-sm text-white">Real-time (TradingView Scanner)</span>
                 </div>
                 <div class="flex items-center justify-between py-2 border-b border-dark-800">
                     <span class="text-sm text-dark-300">Backend</span>
@@ -27,6 +27,10 @@ function getSettingsPage() {
                 <div class="flex items-center justify-between py-2 border-b border-dark-800">
                     <span class="text-sm text-dark-300">Indikator Teknikal</span>
                     <span class="text-sm text-white">MA, EMA, RSI, MACD, BB, Stochastic</span>
+                </div>
+                <div class="flex items-center justify-between py-2 border-b border-dark-800">
+                    <span class="text-sm text-dark-300">API Key</span>
+                    <span class="text-sm text-success">Tidak diperlukan - GRATIS</span>
                 </div>
             </div>
         </div>

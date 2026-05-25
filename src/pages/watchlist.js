@@ -14,7 +14,7 @@ function getWatchlistPage() {
             <i class="fas fa-eye text-4xl text-dark-600 mb-4"></i>
             <h3 class="text-lg font-semibold text-white mb-2">Watchlist Kosong</h3>
             <p class="text-dark-400 text-sm mb-4">Tambahkan saham untuk dipantau harganya secara real-time.</p>
-            <p class="text-xs text-dark-500">Data harga akan di-fetch langsung dari Yahoo Finance.</p>
+            <p class="text-xs text-dark-500">Data harga akan di-fetch langsung dari TradingView.</p>
         </div>
     </div>`;
 }

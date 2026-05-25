@@ -14,7 +14,7 @@ function getPortfolioPage() {
             <i class="fas fa-briefcase text-4xl text-dark-600 mb-4"></i>
             <h3 class="text-lg font-semibold text-white mb-2">Portfolio Kosong</h3>
             <p class="text-dark-400 text-sm mb-4">Tambahkan transaksi beli/jual untuk mulai tracking portfolio Anda.</p>
-            <p class="text-xs text-dark-500">Fitur ini akan menyimpan data di browser (localStorage).<br>Harga saham akan di-update real-time dari Yahoo Finance.</p>
+            <p class="text-xs text-dark-500">Fitur ini akan menyimpan data di browser (localStorage).<br>Harga saham akan di-update real-time dari TradingView.</p>
         </div>
     </div>`;
 }

@@ -14,7 +14,7 @@ async function getFundamentalPage() {
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="text-2xl font-bold text-white">Analisa Fundamental</h2>
-                <p class="text-dark-400 text-sm mt-1">Data real dari Yahoo Finance</p>
+                <p class="text-dark-400 text-sm mt-1">Data real dari TradingView Scanner</p>
             </div>
             <div class="flex items-center gap-2 bg-dark-800 rounded-lg px-3 py-2">
                 <i class="fas fa-search text-dark-500 text-sm"></i>
