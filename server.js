@@ -77,7 +77,7 @@ function httpsGet(urlStr) {
 }
 
 // ============ FALLBACK/MOCK DATA (when API is unreachable) ============
-let USE_FALLBACK = true; // Set to true initially; will try live API on first successful connection
+let USE_FALLBACK = false; // Will auto-switch to fallback if TradingView API is unreachable
 
 const MOCK_PRICES = {
     'BBCA': { close: 9875, change_pct: 1.28, change_abs: 125, volume: 18500000, market_cap: 1210000000000000, pe: 28.5, pb: 4.8, open: 9750, high: 9925, low: 9725, prev_close: 9750, name: 'BBCA', description: 'Bank Central Asia', sector: 'Financials' },
