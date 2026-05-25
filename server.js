@@ -170,7 +170,7 @@ async function tvGetQuotes(symbols) {
         const tickers = symbols.map(s => `IDX:${s}`);
         const body = {
             symbols: { tickers },
-            columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'price_earnings_ttm', 'price_book_fq', 'open', 'high', 'low', 'name', 'description', 'sector', 'Perf.W', 'Perf.1M', 'prev_close_price']
+            columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'price_earnings_ttm', 'price_book_fq', 'open', 'high', 'low', 'name', 'description', 'sector', 'Perf.W', 'Perf.1M']
         };
         const res = await httpsPost(TV_SCANNER_URL, body);
         if (res.status !== 200) {
@@ -200,7 +200,7 @@ async function tvGetQuotes(symbols) {
                 sector: d[12],
                 perf_week: d[13],
                 perf_month: d[14],
-                prev_close: d[15]
+                prev_close: d[0] - (d[2] || 0)
             };
         });
     } catch (e) {
@@ -212,7 +212,7 @@ async function tvGetTopStocks(sortBy, sortOrder, limit) {
     if (USE_FALLBACK) return getMockTopStocks(sortBy, sortOrder, limit);
     try {
         const body = {
-            columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'name', 'description', 'sector', 'price_earnings_ttm', 'price_book_fq', 'open', 'high', 'low', 'prev_close_price'],
+            columns: ['close', 'change', 'change_abs', 'volume', 'market_cap_basic', 'name', 'description', 'sector', 'price_earnings_ttm', 'price_book_fq', 'open', 'high', 'low'],
             sort: { sortBy: sortBy || 'volume', sortOrder: sortOrder || 'desc' },
             range: [0, limit || 30],
             markets: ['indonesia']
@@ -243,7 +243,7 @@ async function tvGetTopStocks(sortBy, sortOrder, limit) {
                 open: d[10],
                 high: d[11],
                 low: d[12],
-                prev_close: d[13]
+                prev_close: d[0] - (d[2] || 0)
             };
         });
     } catch (e) {
